@@ -1,12 +1,15 @@
 import os
 import json
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, request, jsonify, render_template
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 
-# ✅ Flask 앱 생성
+load_dotenv()  # ✅ .env 불러오기
+
 app = Flask(__name__)
+
+
 
 
 
@@ -101,21 +104,27 @@ def home():
 
 
 
+
+@app.route("/")
+def home():
+    return render_template("index.html")
+
 @app.route('/sheet', methods=['POST'])
 def access_sheet():
     data = request.json
-    scope = ['https://spreadsheets.google.com/feeds',
-             'https://www.googleapis.com/auth/drive']
-    creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
+    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+
+    # ✅ .env에 있는 GOOGLE_SHEET_KEY 값 파싱
+    keyfile_dict = json.loads(os.getenv("GOOGLE_SHEET_KEY"))
+
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, scope)
     client = gspread.authorize(creds)
 
     sheet = client.open(data['spreadsheet_name']).worksheet(data['worksheet_name'])
     values = sheet.get_all_values()
     return jsonify(values)
 
-
-
+# ✅ Render 호환 실행부
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
-
