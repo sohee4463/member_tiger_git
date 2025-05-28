@@ -1,3 +1,6 @@
 .env
 __pycache__/
 *.pyc
+# 민감 정보 제외
+*.json
+
