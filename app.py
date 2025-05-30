@@ -141,7 +141,17 @@ def add_order():
     except Exception as e:
         return jsonify({"error": str(e)})
 
+@app.route("/find_member", methods=["POST"])
+def find_member():
+    data = request.get_json()
+    name = data.get("name")
+    return jsonify({
+        "name": name,
+        "phone": "010-1234-5678",
+        "email": "test@example.com"
+    })
 
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+if __name__ == "__main__":
+    app.run()
+
+
