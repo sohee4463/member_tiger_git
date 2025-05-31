@@ -112,60 +112,60 @@ def find_member():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
-@app.route("/process_support_bonus_excel", methods=["POST"])
-def process_support_bonus_excel():
+@app.route("/add_support_bonus", methods=["POST"])
+def add_support_bonus():
     try:
-        file = request.files['file']
+        data = request.get_json()
 
-        # 헤더 자동 탐지 (기준일자 포함 행)
-        temp_df = pd.read_excel(file, header=None)
-        header_row_idx = None
-        for i in range(min(5, len(temp_df))):
-            if "기준일자" in temp_df.iloc[i].astype(str).tolist():
-                header_row_idx = i
-                break
+        # 👤 이름 추출 (예: "홍길동의 후원수당이야")
+        name_text = data.get("이름", "").strip()
+        member_name = ""
+        if "의 후원수당" in name_text:
+            member_name = name_text.split("의 후원수당")[0].strip()
 
-        if header_row_idx is None:
-            return jsonify({"error": "'기준일자'가 포함된 헤더를 찾을 수 없습니다."}), 400
+        if not member_name:
+            return jsonify({"error": "회원명을 추출할 수 없습니다."}), 400
 
-        df = pd.read_excel(file, header=header_row_idx)
+        # ✅ 저장 대상 항목
+        base_fields = ["기준일자", "합계_좌", "합계_우", "취득점수", "관리자직급"]
+        if any(data.get(field) is None for field in base_fields):
+            return jsonify({"error": "필수 항목이 누락되었습니다."}), 400
 
-        # 중간 헤더 제거
-        df = df[df.iloc[:, 0] != "기준일자"]
+        # 🔢 횟수 계산: 취득점수 15점당 1회
+        try:
+            score = int(data.get("취득점수"))
+            count = score // 15
+        except:
+            return jsonify({"error": "취득점수는 숫자여야 합니다."}), 400
 
-        # 열 매핑
-        col_map = {}
-        for col in df.columns:
-            if "기준일자" in str(col): col_map["기준일자"] = col
-            elif "합계" in str(col) and "좌" in str(col): col_map["합계_좌"] = col
-            elif "합계" in str(col) and "우" in str(col): col_map["합계_우"] = col
-            elif "취득점수" in str(col): col_map["취득점수"] = col
-            elif "관리자직급" in str(col): col_map["관리자직급"] = col
+        # 📤 스프레드시트 저장
+        sheet = get_sheet().spreadsheet
+        try:
+            ws = sheet.worksheet("후원수당파일")
+        except:
+            ws = sheet.add_worksheet(title="후원수당파일", rows="1000", cols="20")
 
-        required = ["기준일자", "합계_좌", "합계_우", "취득점수", "관리자직급"]
-        if any(k not in col_map for k in required):
-            return jsonify({"error": "필수 열이 누락되었습니다."}), 400
+        existing = ws.get_all_values()
+        if not existing or all(cell == '' for cell in existing[0]):
+            # 1행 비워두기 (헤더 없이)
+            ws.update("A1:G1", [[""]])
 
-        df = df[[col_map[k] for k in required]]
-        df.columns = required
-        df = df[df["취득점수"] > 0]
+        # A2부터 append
+        row = [
+            data.get("기준일자", ""),
+            data.get("합계_좌", ""),
+            data.get("합계_우", ""),
+            data.get("취득점수", ""),
+            data.get("관리자직급", ""),
+            count,
+            member_name
+        ]
+        ws.insert_row(row, index=2)
 
-        df["횟수"] = (pd.to_numeric(df["취득점수"], errors="coerce") // 15).fillna(0).astype(int)
-        df["기준일자"] = pd.to_datetime(df["기준일자"], errors='coerce').dt.strftime('%Y-%m-%d')
-
-        # 시트 저장
-        sheet = get_sheet()
-        values = df[["기준일자", "합계_좌", "합계_우", "취득점수", "관리자직급", "횟수"]].values.tolist()
-        for i, row in enumerate(values):
-            sheet.insert_row(row, index=2 + i)
-
-        return jsonify({"message": f"총 {len(values)}건 저장되었습니다.", "rows": len(values)})
+        return jsonify({"message": "후원수당 정보가 저장되었습니다."})
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
 
 
 
