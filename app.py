@@ -113,6 +113,47 @@ def find_member():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/upload_support_bonus_excel", methods=["POST"])
+def upload_support_bonus_excel():
+    try:
+        file = request.files['file']
+        name = request.form.get('name', '')  # 예: "홍길동의 후원수당 파일이야"
+
+        # 이름 추출
+        member_name = ""
+        if "후원수당" in name:
+            member_name = name.replace("의 후원수당 파일이야", "").strip()
+
+        # 엑셀 읽기
+        df = pd.read_excel(file, header=1)
+        columns = []
+        for col in df.columns:
+            if "기준일자" in str(col): columns.append(col)
+            elif "합계" in str(col) and "좌" in str(col): columns.append(col)
+            elif "합계" in str(col) and "우" in str(col): columns.append(col)
+            elif "취득점수" in str(col): columns.append(col)
+            elif "관리자직급" in str(col): columns.append(col)
+
+        df = df[columns]
+        df.columns = ["기준일자", "합계_좌", "합계_우", "취득점수", "관리자직급"]
+
+        df = df[df["취득점수"] > 0]
+        df["횟수"] = (df["취득점수"] // 15).astype(int)
+        df["이름"] = member_name
+        df["기준일자"] = pd.to_datetime(df["기준일자"]).dt.strftime('%Y-%m-%d')
+
+        # Google Sheets 저장
+        sheet = get_sheet().worksheet("후원수당파일")
+        sheet.clear()
+        sheet.append_row(["기준일자", "합계_좌", "합계_우", "취득점수", "관리자직급", "횟수", "이름"])
+
+        for row in df.values.tolist():
+            sheet.append_row(row)
+
+        return jsonify({"message": f"{member_name}님의 후원수당 자료 업로드 완료", "rows": len(df)})
+    
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 
 
