@@ -119,46 +119,52 @@ def upload_support_bonus_excel():
         file = request.files['file']
         name = request.form.get('name', '')  # 예: "홍길동의 후원수당 파일이야"
 
-        # 이름 추출
+        # 🔍 이름 추출
         member_name = ""
-        if "후원수당" in name:
-            member_name = name.replace("의 후원수당 파일이야", "").strip()
+        if "후원수당" in name and "의" in name:
+            member_name = name.split("의")[0].strip()
 
-        # 엑셀 읽기
-        df = pd.read_excel(file, header=1)
-        columns = []
+        # 📥 엑셀 읽기 (헤더 자동 감지)
+        temp_df = pd.read_excel(file, header=None)
+        header_row_idx = temp_df[temp_df.iloc[:, 0] == "기준일자"].index[0]
+        df = pd.read_excel(file, header=header_row_idx)
+
+        # 🎯 필요한 열 추출
+        target_cols = {}
         for col in df.columns:
-            if "기준일자" in str(col): columns.append(col)
-            elif "합계" in str(col) and "좌" in str(col): columns.append(col)
-            elif "합계" in str(col) and "우" in str(col): columns.append(col)
-            elif "취득점수" in str(col): columns.append(col)
-            elif "관리자직급" in str(col): columns.append(col)
+            if "기준일자" in str(col): target_cols["기준일자"] = col
+            elif "합계" in str(col) and "좌" in str(col): target_cols["합계_좌"] = col
+            elif "합계" in str(col) and "우" in str(col): target_cols["합계_우"] = col
+            elif "취득점수" in str(col): target_cols["취득점수"] = col
+            elif "관리자직급" in str(col): target_cols["관리자직급"] = col
 
-        df = df[columns]
+        df = df[[target_cols[k] for k in ["기준일자", "합계_좌", "합계_우", "취득점수", "관리자직급"]]]
         df.columns = ["기준일자", "합계_좌", "합계_우", "취득점수", "관리자직급"]
 
+        # 🔢 취득점수 → 횟수 계산
         df = df[df["취득점수"] > 0]
         df["횟수"] = (df["취득점수"] // 15).astype(int)
         df["이름"] = member_name
         df["기준일자"] = pd.to_datetime(df["기준일자"]).dt.strftime('%Y-%m-%d')
 
-        # Google Sheets 저장
+        # 📤 Google Sheets에 A2부터 기록
         sheet = get_sheet().worksheet("후원수당파일")
-        sheet.clear()
-        sheet.append_row(["기준일자", "합계_좌", "합계_우", "취득점수", "관리자직급", "횟수", "이름"])
+        values = df[["기준일자", "합계_좌", "합계_우", "취득점수", "관리자직급", "횟수", "이름"]].values.tolist()
 
-        for row in df.values.tolist():
-            sheet.append_row(row)
+        start_row = 2
+        sheet.batch_clear([f"A{start_row}:G"])  # 기존 데이터 지우지 않으려면 제거
 
-        return jsonify({"message": f"{member_name}님의 후원수당 자료 업로드 완료", "rows": len(df)})
-    
+        # A2부터 차례로 삽입
+        for i, row in enumerate(values):
+            sheet.insert_row(row, index=start_row + i)
+
+        return jsonify({
+            "message": f"{member_name}님의 후원수당 자료가 {len(values)}건 저장되었습니다.",
+            "rows": len(values)
+        })
+
     except Exception as e:
         return jsonify({"error": str(e)})
-
-
-
-
-
 
 
 if __name__ == "__main__":
