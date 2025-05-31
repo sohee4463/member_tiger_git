@@ -117,15 +117,6 @@ def add_support_bonus():
     try:
         data = request.get_json()
 
-        # 👤 이름 추출 (예: "홍길동의 후원수당이야")
-        name_text = data.get("이름", "").strip()
-        member_name = ""
-        if "의 후원수당" in name_text:
-            member_name = name_text.split("의 후원수당")[0].strip()
-
-        if not member_name:
-            return jsonify({"error": "회원명을 추출할 수 없습니다."}), 400
-
         # ✅ 저장 대상 항목
         base_fields = ["기준일자", "합계_좌", "합계_우", "취득점수", "관리자직급"]
         if any(data.get(field) is None for field in base_fields):
@@ -158,7 +149,6 @@ def add_support_bonus():
             data.get("취득점수", ""),
             data.get("관리자직급", ""),
             count,
-            member_name
         ]
         ws.insert_row(row, index=2)
 
