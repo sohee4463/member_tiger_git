@@ -162,17 +162,20 @@ def find_member():
         if not member_info:
             return jsonify({"error": f"'{name}' 회원을 찾을 수 없습니다."}), 404
 
-        # 필요한 정보만 추출해 응답
-        return jsonify({
-            "회원명": member_info.get("회원명"),
-            "휴대폰번호": member_info.get("휴대폰번호"),
-            "회원번호": member_info.get("회원번호"),
-            "가입일자": member_info.get("가입일자"),
-            "생년월일": member_info.get("생년월일")
-        })
+        # 전체 컬럼 순서에 맞춰 필요한 정보만 반환
+        fields = [
+            "회원명", "휴대폰번호", "회원번호", "비밀번호", "가입일자", "생년월일", "통신사", "친밀도", "근무처", "계보도",
+            "소개한분", "주소", "메모", "코드", "카드사", "카드주인", "카드번호", "유효기간", "비번", "카드생년월일",
+            "분류", "회원단계", "연령/성별", "직업", "가족관계", "니즈", "애용제품", "콘텐츠", "습관챌린지",
+            "비즈니스시스템", "GLC프로젝트", "리더님", "NO"
+        ]
+
+        result = {field: member_info.get(field, "") for field in fields}
+        return jsonify(result)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
 
