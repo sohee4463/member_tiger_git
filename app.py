@@ -119,42 +119,54 @@ def upload_support_bonus_excel():
         file = request.files['file']
         name = request.form.get('name', '')  # 예: "홍길동의 후원수당 파일이야"
 
-        # 🔍 이름 추출
+        # 👤 이름 추출
         member_name = ""
         if "후원수당" in name and "의" in name:
             member_name = name.split("의")[0].strip()
 
-        # 📥 엑셀 읽기 (헤더 자동 감지: '주문일자'가 있는 행을 헤더로 설정)
+        # 📥 엑셀 파일 헤더 위치 자동 감지 (기준일자 찾기)
         temp_df = pd.read_excel(file, header=None)
-        header_row_idx = temp_df[temp_df.iloc[:, 0] == "주문일자"].index[0]
+        header_row_idx = None
+        for i in range(3):  # 0, 1, 2행까지 검사
+            if "기준일자" in temp_df.iloc[i].astype(str).tolist():
+                header_row_idx = i
+                break
+
+        if header_row_idx is None:
+            return jsonify({"error": "'기준일자' 열이 포함된 헤더를 찾을 수 없습니다."}), 400
+
         df = pd.read_excel(file, header=header_row_idx)
 
-        # 🔎 필요한 컬럼 선택
-        target_cols = {}
+        # 🔎 필요한 열 매핑
+        col_map = {}
         for col in df.columns:
-            if "주문일자" in str(col): target_cols["주문일자"] = col
-            elif "합계" in str(col) and "좌" in str(col): target_cols["합계_좌"] = col
-            elif "합계" in str(col) and "우" in str(col): target_cols["합계_우"] = col
-            elif "취득점수" in str(col): target_cols["취득점수"] = col
-            elif "관리자직급" in str(col): target_cols["관리자직급"] = col
+            if "기준일자" in str(col): col_map["기준일자"] = col
+            elif "합계" in str(col) and "좌" in str(col): col_map["합계_좌"] = col
+            elif "합계" in str(col) and "우" in str(col): col_map["합계_우"] = col
+            elif "취득점수" in str(col): col_map["취득점수"] = col
+            elif "관리자직급" in str(col): col_map["관리자직급"] = col
 
-        df = df[[target_cols[k] for k in ["주문일자", "합계_좌", "합계_우", "취득점수", "관리자직급"]]]
-        df.columns = ["주문일자", "합계_좌", "합계_우", "취득점수", "관리자직급"]
+        # 열 누락 검사
+        required_fields = ["기준일자", "합계_좌", "합계_우", "취득점수", "관리자직급"]
+        if any(k not in col_map for k in required_fields):
+            return jsonify({"error": "필수 열이 누락되었습니다."}), 400
 
-        # 🔢 계산 및 필터링
+        # ✂️ 필요한 열 추출 및 정리
+        df = df[[col_map[k] for k in required_fields]]
+        df.columns = required_fields
+
+        # 📐 계산 및 포맷
         df = df[df["취득점수"] > 0]
         df["횟수"] = (df["취득점수"] // 15).astype(int)
         df["이름"] = member_name
-        df["주문일자"] = pd.to_datetime(df["주문일자"]).dt.strftime('%Y-%m-%d')
+        df["기준일자"] = pd.to_datetime(df["기준일자"], errors='coerce').dt.strftime('%Y-%m-%d')
 
-        # 📤 Google Sheets 저장
+        # 📤 Google Sheets 저장 (A2부터)
         sheet = get_sheet().worksheet("후원수당파일")
-
-        # 🎯 A2부터 저장 (1행 비움)
-        values = df[["주문일자", "합계_좌", "합계_우", "취득점수", "관리자직급", "횟수", "이름"]].values.tolist()
+        values = df[["기준일자", "합계_좌", "합계_우", "취득점수", "관리자직급", "횟수", "이름"]].values.tolist()
 
         for i, row in enumerate(values):
-            sheet.insert_row(row, index=2 + i)
+            sheet.insert_row(row, index=2 + i)  # A2부터 삽입
 
         return jsonify({
             "message": f"{member_name}님의 후원수당 자료가 {len(values)}건 저장되었습니다.",
@@ -162,7 +174,8 @@ def upload_support_bonus_excel():
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)})
+        return jsonify({"error": str(e)}), 500
+
 
 
 
