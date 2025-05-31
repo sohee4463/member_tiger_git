@@ -1,0 +1,110 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Members API",
+    "version": "1.0.0",
+    "description": "회원 검색, 주문 등록, 수당 엑셀 업로드를 처리하는 API입니다."
+  },
+  "servers": [
+    {
+      "url": "https://memberslist.onrender.com",
+      "description": "Render 서버"
+    }
+  ],
+  "paths": {
+    "/find_member": {
+      "post": {
+        "operationId": "findMember",
+        "summary": "회원 이름으로 검색",
+        "x-openai-action": {
+          "name": "회원정보검색",
+          "description": "회원 이름으로 정보를 검색합니다."
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "검색할 회원 이름"
+                  }
+                },
+                "required": ["name"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "회원정보 응답",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "회원명": { "type": "string" },
+                    "휴대폰번호": { "type": "string" },
+                    "회원번호": { "type": "string" },
+                    "가입일자": { "type": "string" },
+                    "생년월일": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/add_order": {
+      "post": {
+        "operationId": "addOrder",
+        "summary": "주문 등록",
+        "x-openai-action": {
+          "name": "주문등록",
+          "description": "자연어로 입력된 주문을 Google Sheets에 저장합니다."
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "회원명": { "type": "string" },
+                  "주문일자": { "type": "string" },
+                  "제품명": { "type": "string" },
+                  "가격": { "type": "number" },
+                  "PV": { "type": "number" },
+                  "결재방법": { "type": "string" },
+                  "주문고객명": { "type": "string" },
+                  "주문자_휴대폰번호": { "type": "string" },
+                  "배송처": { "type": "string" },
+                  "수령확인": { "type": "string" }
+                },
+                "required": ["회원명", "제품명", "가격"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "주문 저장 성공 메시지",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
