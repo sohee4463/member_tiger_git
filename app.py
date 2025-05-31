@@ -1,11 +1,18 @@
 import os
 import json
 import pandas as pd
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from datetime import datetime
+
+
+
+
+
+
+
 
 load_dotenv()
 app = Flask(__name__)
@@ -121,57 +128,36 @@ from flask import request, jsonify
 import pandas as pd
 from datetime import datetime
 
-@app.route("/upload_commission_excel_fixed", methods=["POST"])
-def upload_commission_excel_fixed():
+
+
+@app.route('/')
+def index():
+    return render_template('upload.html')  # 업로드 폼 보여줌
+
+@app.route('/upload_excel', methods=['POST'])
+def upload_excel():
     try:
-        # 1. 파일 존재 여부 확인
         if 'file' not in request.files:
-            return jsonify({"error": "파일이 포함되지 않았습니다."}), 400
+            return {"message": "엑셀 파일이 포함되지 않았습니다."}, 400
 
         file = request.files['file']
-        df_raw = pd.read_excel(file, header=None)
+        df = pd.read_excel(file)
 
-        # 2. 1~3행 중 "기준일자"가 있는 행을 헤더로 설정
-        header_row_idx = None
-        for i in range(3):
-            if "기준일자" in df_raw.iloc[i].values:
-                header_row_idx = i
-                break
+        # ✅ 환경변수에서 JSON 키 읽기
+        key_dict = json.loads(os.environ['GOOGLE_SHEET_KEY'])
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
+        client = gspread.authorize(creds)
 
-        if header_row_idx is None:
-            return jsonify({"error": "'기준일자' 헤더를 찾을 수 없습니다."}), 400
+        # ✅ Google Sheets 문서 이름 정확히 지정
+        sheet = client.open("후원수당파일").sheet1
+        sheet.clear()
+        sheet.update([df.columns.values.tolist()] + df.values.tolist())
 
-        # 3. 헤더 설정 및 데이터 추출
-        df_data = df_raw.iloc[header_row_idx + 1:].copy()
-        df_data.columns = df_raw.iloc[header_row_idx]
-        df_data = df_data.reset_index(drop=True)
+        return {"message": f"{len(df)}건 업로드 성공"}, 200
 
-        # 4. 유효한 데이터 존재 여부 확인
-        if df_data.dropna(how='all').empty:
-            return jsonify({"error": "유효한 데이터가 없습니다."}), 400
-
-        # 5. 기준일자 포맷 정리
-        if '기준일자' in df_data.columns:
-            df_data['기준일자'] = pd.to_datetime(df_data['기준일자'], errors='coerce')
-            df_data['기준일자'] = df_data['기준일자'].dt.strftime('%Y-%m-%d').fillna('')
-
-        # 6. Google Sheets 접근 및 기존 데이터 삭제
-        try:
-            sheet = get_sheet("후원수당파일")
-            sheet.batch_clear(["A2:AZ1000"])
-        except Exception:
-            return jsonify({"error": "Google Sheets에 접근할 수 없습니다."}), 500
-
-        # 7. 데이터 저장
-        if not df_data.empty:
-            sheet.append_rows(df_data.values.tolist(), value_input_option="USER_ENTERED")
-
-        return jsonify({"message": f"{len(df_data)}건이 '후원수당파일' 시트에 저장되었습니다."})
-
-    except Exception:
-        return jsonify({"error": "업로드 중 알 수 없는 오류가 발생했습니다."}), 500
-
-
+    except Exception as e:
+        return {"message": f"오류 발생: {str(e)}"}, 500
 
 
 
