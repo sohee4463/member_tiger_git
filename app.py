@@ -112,50 +112,69 @@ def find_member():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/add_support_bonus", methods=["POST"])
-def add_support_bonus():
+
+
+
+
+
+from flask import request, jsonify
+import pandas as pd
+from datetime import datetime
+
+@app.route("/upload_commission_excel_fixed", methods=["POST"])
+def upload_commission_excel_fixed():
     try:
-        data = request.get_json()
+        # 1. 파일 존재 여부 확인
+        if 'file' not in request.files:
+            return jsonify({"error": "파일이 포함되지 않았습니다."}), 400
 
-        # ✅ 저장 대상 항목
-        base_fields = ["기준일자", "합계_좌", "합계_우", "취득점수", "관리자직급"]
-        if any(data.get(field) is None for field in base_fields):
-            return jsonify({"error": "필수 항목이 누락되었습니다."}), 400
+        file = request.files['file']
+        df_raw = pd.read_excel(file, header=None)
 
-        # 🔢 횟수 계산: 취득점수 15점당 1회
+        # 2. 1~3행 중 "기준일자"가 있는 행을 헤더로 설정
+        header_row_idx = None
+        for i in range(3):
+            if "기준일자" in df_raw.iloc[i].values:
+                header_row_idx = i
+                break
+
+        if header_row_idx is None:
+            return jsonify({"error": "'기준일자' 헤더를 찾을 수 없습니다."}), 400
+
+        # 3. 헤더 설정 및 데이터 추출
+        df_data = df_raw.iloc[header_row_idx + 1:].copy()
+        df_data.columns = df_raw.iloc[header_row_idx]
+        df_data = df_data.reset_index(drop=True)
+
+        # 4. 유효한 데이터 존재 여부 확인
+        if df_data.dropna(how='all').empty:
+            return jsonify({"error": "유효한 데이터가 없습니다."}), 400
+
+        # 5. 기준일자 포맷 정리
+        if '기준일자' in df_data.columns:
+            df_data['기준일자'] = pd.to_datetime(df_data['기준일자'], errors='coerce')
+            df_data['기준일자'] = df_data['기준일자'].dt.strftime('%Y-%m-%d').fillna('')
+
+        # 6. Google Sheets 접근 및 기존 데이터 삭제
         try:
-            score = int(data.get("취득점수"))
-            count = score // 15
-        except:
-            return jsonify({"error": "취득점수는 숫자여야 합니다."}), 400
+            sheet = get_sheet("후원수당파일")
+            sheet.batch_clear(["A2:AZ1000"])
+        except Exception:
+            return jsonify({"error": "Google Sheets에 접근할 수 없습니다."}), 500
 
-        # 📤 스프레드시트 저장
-        sheet = get_sheet().spreadsheet
-        try:
-            ws = sheet.worksheet("후원수당파일")
-        except:
-            ws = sheet.add_worksheet(title="후원수당파일", rows="1000", cols="20")
+        # 7. 데이터 저장
+        if not df_data.empty:
+            sheet.append_rows(df_data.values.tolist(), value_input_option="USER_ENTERED")
 
-        existing = ws.get_all_values()
-        if not existing or all(cell == '' for cell in existing[0]):
-            # 1행 비워두기 (헤더 없이)
-            ws.update("A1:G1", [[""]])
+        return jsonify({"message": f"{len(df_data)}건이 '후원수당파일' 시트에 저장되었습니다."})
 
-        # A2부터 append
-        row = [
-            data.get("기준일자", ""),
-            data.get("합계_좌", ""),
-            data.get("합계_우", ""),
-            data.get("취득점수", ""),
-            data.get("관리자직급", ""),
-            count,
-        ]
-        ws.insert_row(row, index=2)
+    except Exception:
+        return jsonify({"error": "업로드 중 알 수 없는 오류가 발생했습니다."}), 500
 
-        return jsonify({"message": "후원수당 정보가 저장되었습니다."})
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+
+
+
 
 
 
