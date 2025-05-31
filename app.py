@@ -141,8 +141,8 @@ def upload_support_bonus_excel():
         col_map = {}
         for col in df.columns:
             if "기준일자" in str(col): col_map["기준일자"] = col
-            elif "합계" in str(col) and "좌" in str(col): col_map["합계_좌"] = col
-            elif "합계" in str(col) and "우" in str(col): col_map["합계_우"] = col
+            elif "합계_좌" in str(col): col_map["합계_좌"] = col
+            elif "합계_우" in str(col): col_map["합계_우"] = col
             elif "취득점수" in str(col): col_map["취득점수"] = col
             elif "관리자직급" in str(col): col_map["관리자직급"] = col
 
