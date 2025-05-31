@@ -151,7 +151,8 @@ def find_member():
         "email": "test@example.com"
     })
 
-if __name__ == "__main__":
-    app.run()
 
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)  # ✅ Render에서 감지 가능한 포트
 
