@@ -141,15 +141,43 @@ def add_order():
     except Exception as e:
         return jsonify({"error": str(e)})
 
+
+
+
+
+
 @app.route("/find_member", methods=["POST"])
 def find_member():
-    data = request.get_json()
-    name = data.get("name")
-    return jsonify({
-        "name": name,
-        "phone": "010-1234-5678",
-        "email": "test@example.com"
-    })
+    try:
+        data = request.get_json()
+        name = data.get("name", "").strip()
+
+        if not name:
+            return jsonify({"error": "이름을 입력해야 합니다."}), 400
+
+        sheet = get_sheet()
+        db_records = sheet.get_all_records()
+        member_info = next((r for r in db_records if r.get("회원명") == name), None)
+
+        if not member_info:
+            return jsonify({"error": f"'{name}' 회원을 찾을 수 없습니다."}), 404
+
+        # 필요한 정보만 추출해 응답
+        return jsonify({
+            "회원명": member_info.get("회원명"),
+            "휴대폰번호": member_info.get("휴대폰번호"),
+            "회원번호": member_info.get("회원번호"),
+            "가입일자": member_info.get("가입일자"),
+            "생년월일": member_info.get("생년월일")
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
+
+
 
 
 
