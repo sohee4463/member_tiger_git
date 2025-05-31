@@ -126,7 +126,7 @@ def add_order():
             data.get("주문일자", ""),
             member_name,
             member_number,
-            phone_number,
+            phone_number,   
             data.get("제품명", ""),
             data.get("가격", ""),
             data.get("PV", ""),
