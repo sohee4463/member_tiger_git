@@ -34,9 +34,16 @@ def get_sheet():
     client = gspread.authorize(creds)
     return client.open("members_list_main").worksheet("DB")
 
-@app.route("/")
-def home():
-    return "Flask 서버가 실행 중입니다."
+
+
+
+
+@app.route('/')
+def index():
+    return render_template('upload.html')
+
+
+
 
 @app.route("/add_order", methods=["POST"])
 def add_order():
