@@ -1,7 +1,7 @@
 import os
 import json
 import pandas as pd
-from flask import Flask, request, jsonify, 
+from flask import Flask, request, jsonify
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
