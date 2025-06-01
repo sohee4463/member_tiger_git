@@ -9,11 +9,11 @@ from datetime import datetime
 from functools import lru_cache
 import logging
 import mimetypes
-from flask_cors import CORS  # 🔸 CORS
+from flask_cors import CORS
 
 load_dotenv()
 app = Flask(__name__)
-CORS(app)  # 🔸 CORS 활성화
+CORS(app)
 logging.basicConfig(level=logging.INFO)
 
 SHEET_NAME = os.getenv("SHEET_NAME", "members_list_main")
@@ -42,12 +42,12 @@ def get_client():
     creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, scope)
     return gspread.authorize(creds)
 
-def get_db_sheet():
-    return get_client().open(SHEET_NAME).worksheet("DB")
+def get_members_sheet():
+    return get_client().open("DB").worksheet("DB")
 
 def get_order_sheet():
     client = get_client()
-    ss = client.open(SHEET_NAME)
+    ss = client.open("제품주문")
     try:
         sheet = ss.worksheet("제품주문")
     except:
@@ -58,15 +58,44 @@ def get_order_sheet():
 
 def get_bonus_sheet():
     client = get_client()
-    ss = client.open(SHEET_NAME)
+    ss = client.open("후원수당파일")
     try:
         return ss.worksheet("후원수당파일")
     except:
         return ss.add_worksheet(title="후원수당파일", rows="1000", cols="50")
 
-@app.route('/')
+@app.route("/")
 def index():
     return jsonify({"message": "Flask 서버가 정상 작동 중입니다."})
+
+@app.route("/find_member", methods=["POST"])
+def find_member():
+    try:
+        data = request.get_json()
+        name = data.get("name", "").strip()
+
+        if not name:
+            return jsonify({"error": "이름을 입력해야 합니다."}), 400
+
+        sheet = get_members_sheet()
+        db_records = sheet.get_all_records()
+        member_info = next((r for r in db_records if r.get("회원명") == name), None)
+
+        if not member_info:
+            return jsonify({"error": f"'{name}' 회원을 찾을 수 없습니다."}), 404
+
+        fields = [
+            "회원명", "휴대폰번호", "회원번호", "비밀번호", "가입일자", "생년월일", "통신사", "친밀도", "근무처", "계보도",
+            "소개한분", "주소", "메모", "코드", "카드사", "카드주인", "카드번호", "유효기간", "비번", "카드생년월일",
+            "분류", "회원단계", "연령/성별", "직업", "가족관계", "니즈", "애용제품", "콘텐츠", "습관챌린지",
+            "비즈니스시스템", "GLC프로젝트", "리더님", "NO"
+        ]
+
+        result = {field: member_info.get(field, "") for field in fields}
+        return jsonify(result)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/upload_form", methods=["GET"])
 def upload_form():
@@ -87,14 +116,21 @@ def upload_excel():
 
         file = request.files['file']
         filename = file.filename.lower()
+        ext = os.path.splitext(filename)[1]
         mime_type, _ = mimetypes.guess_type(filename)
 
-        if not filename.endswith((".xls", ".xlsx")) or not mime_type or not mime_type.startswith("application/vnd"):
-            return jsonify({"message": "엑셀 파일 형식만 지원됩니다."}), 400
+        ALLOWED_EXTENSIONS = {".xls", ".xlsx"}
+        ALLOWED_MIME_TYPES = {
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        }
+
+        if ext not in ALLOWED_EXTENSIONS or mime_type not in ALLOWED_MIME_TYPES:
+            return jsonify({"message": "지원되는 엑셀 파일 형식은 .xls 또는 .xlsx입니다."}), 400
 
         df_raw = pd.read_excel(file, header=None)
         header_row = None
-        for i in range(min(5, len(df_raw))):  # 🔸 유연한 범위
+        for i in range(min(5, len(df_raw))):
             if df_raw.iloc[i].astype(str).str.contains("기준일자").any():
                 header_row = i
                 break
@@ -106,11 +142,10 @@ def upload_excel():
         df.columns = df_raw.iloc[header_row]
         df = df.fillna("")
 
-        if not BONUS_REQUIRED_HEADERS.issubset(set(df.columns)):  # 🔸 필수 컬럼 체크
+        if not BONUS_REQUIRED_HEADERS.issubset(set(df.columns)):
             missing = BONUS_REQUIRED_HEADERS - set(df.columns)
             return jsonify({"message": f"누락된 필수 컬럼: {', '.join(missing)}"}), 400
 
-        # 🔹 날짜 형식 필터링 추가
         try:
             df = df[df["기준일자"].astype(str).str.match(r"^\d{4}-\d{2}-\d{2}$")]
         except Exception as e:
@@ -122,7 +157,7 @@ def upload_excel():
 
         return jsonify({"message": f"{len(df)}건 업로드 성공"}), 200
     except Exception as e:
-        app.logger.exception("upload_excel 오류")  # 🔸 traceback 포함
+        app.logger.exception("upload_excel 오류")
         return jsonify({"message": "엑셀 업로드 중 오류가 발생했습니다."}), 500
 
 if __name__ == "__main__":
