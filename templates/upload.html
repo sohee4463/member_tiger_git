@@ -2,48 +2,13 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>엑셀 업로드</title>
-  <style>
-    body {
-      font-family: sans-serif;
-      padding: 2rem;
-      max-width: 600px;
-      margin: auto;
-    }
-    h2 {
-      text-align: center;
-    }
-    form {
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-      margin-top: 2rem;
-    }
-    input[type="file"] {
-      font-size: 1rem;
-    }
-    button {
-      padding: 0.75rem;
-      font-size: 1rem;
-      background-color: #007bff;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-    }
-    button:hover {
-      background-color: #0056b3;
-    }
-  </style>
 </head>
 <body>
-  <h2>엑셀 파일 업로드</h2>
-  <form action="/upload_excel" method="post" enctype="multipart/form-data">
-    <input type="file" name="file" accept=".xlsx" required>
+  <h2>후원수당 엑셀 업로드</h2>
+  <form action="/upload_excel" method="POST" enctype="multipart/form-data">
+    <input type="file" name="file" accept=".xls,.xlsx" required>
     <button type="submit">업로드</button>
   </form>
 </body>
 </html>
-
-
