@@ -1,7 +1,7 @@
 import os
 import json
 import pandas as pd
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, 
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
@@ -11,8 +11,18 @@ import logging
 import mimetypes
 from flask_cors import CORS
 
+
+
+
+
+
 load_dotenv()
 app = Flask(__name__)
+
+@app.route('/upload_form')
+def upload_form():
+    return render_template('upload_form.html')
+
 CORS(app)
 logging.basicConfig(level=logging.INFO)
 
