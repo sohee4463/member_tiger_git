@@ -19,9 +19,7 @@ from flask_cors import CORS
 load_dotenv()
 app = Flask(__name__)
 
-@app.route('/upload_form')
-def upload_form():
-    return render_template('upload_form.html')
+
 
 CORS(app)
 logging.basicConfig(level=logging.INFO)
@@ -107,24 +105,20 @@ def find_member():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/upload_form", methods=["GET"])
-def upload_form():
-    return """
-    <h3>엑셀 업로드</h3>
-    <p>엑셀 파일(.xls, .xlsx)을 업로드하세요.</p>
-    <form action="/upload_excel" method="post" enctype="multipart/form-data">
-        <input type="file" name="file" accept=".xls,.xlsx">
-        <input type="submit" value="업로드">
-    </form>
-    """
+from flask import render_template
 
-@app.route('/upload_excel', methods=['POST'])
+
+
+@app.route("/upload_excel", methods=["POST"])
 def upload_excel():
     try:
         if 'file' not in request.files:
             return jsonify({"message": "엑셀 파일이 포함되지 않았습니다."}), 400
 
         file = request.files['file']
+        if file.filename == "":
+            return jsonify({"message": "파일이 선택되지 않았습니다."}), 400
+
         filename = file.filename.lower()
         ext = os.path.splitext(filename)[1]
         mime_type, _ = mimetypes.guess_type(filename)
@@ -148,18 +142,15 @@ def upload_excel():
         if header_row is None:
             return jsonify({"message": "헤더행에 '기준일자'가 포함되지 않았습니다."}), 400
 
-        df = df_raw.iloc[header_row + 1:]
-        df.columns = df_raw.iloc[header_row]
+        df = df_raw.iloc[header_row + 1:].copy()
+        df.columns = df_raw.iloc[header_row].astype(str).str.strip()
         df = df.fillna("")
 
         if not BONUS_REQUIRED_HEADERS.issubset(set(df.columns)):
             missing = BONUS_REQUIRED_HEADERS - set(df.columns)
             return jsonify({"message": f"누락된 필수 컬럼: {', '.join(missing)}"}), 400
 
-        try:
-            df = df[df["기준일자"].astype(str).str.match(r"^\d{4}-\d{2}-\d{2}$")]
-        except Exception as e:
-            app.logger.warning(f"기준일자 필터링 중 오류: {e}")
+        df = df[df["기준일자"].astype(str).str.match(r"^\d{4}-\d{2}-\d{2}$")]
 
         sheet = get_bonus_sheet()
         sheet.clear()
@@ -168,7 +159,11 @@ def upload_excel():
         return jsonify({"message": f"{len(df)}건 업로드 성공"}), 200
     except Exception as e:
         app.logger.exception("upload_excel 오류")
-        return jsonify({"message": "엑셀 업로드 중 오류가 발생했습니다."}), 500
+        return jsonify({"message": f"엑셀 업로드 중 오류 발생: {str(e)}"}), 500
+
+
+
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
