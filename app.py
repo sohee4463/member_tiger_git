@@ -88,7 +88,11 @@ def add_order():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# ✅ 회원 조회 또는 수정 API
+
+
+
+
+
 @app.route("/find_member", methods=["POST"])
 def find_member():
     try:
@@ -97,7 +101,7 @@ def find_member():
         if not name:
             return jsonify({"error": "이름을 입력해야 합니다."}), 400
 
-        # "수정", "변경", "고쳐" 키워드 중 하나라도 존재하면 수정 처리
+        # 수정 요청 데이터 (자연어 표현 포함)
         수정데이터 = data.get("수정") or data.get("변경") or data.get("고쳐")
 
         sheet = get_sheet()
@@ -105,8 +109,9 @@ def find_member():
         headers = db_values[0]
         records = db_values[1:]
 
+        # 회원명으로 행 인덱스 찾기
         member_index = None
-        for idx, row in enumerate(records, start=2):
+        for idx, row in enumerate(records, start=2):  # 2부터 시작 (헤더 제외)
             if name == row[headers.index("회원명")]:
                 member_index = idx
                 break
@@ -115,7 +120,6 @@ def find_member():
             return jsonify({"error": f"'{name}' 회원을 찾을 수 없습니다."}), 404
 
         if 수정데이터:
-            from gspread.utils import rowcol_to_a1
             col_count = len(headers)
             range_notation = f"A{member_index}:{rowcol_to_a1(member_index, col_count)}"
             current_row = sheet.get(range_notation)[0]
@@ -131,13 +135,19 @@ def find_member():
                         updated_row[col_index] = value
 
             sheet.update(range_notation, [updated_row])
-            return jsonify({"message": f"{name} 회원 정보가 수정되었습니다."}), 200
+            return jsonify({
+                "status": "success",
+                "updated": True,
+                "name": name,
+                "message": f"{name} 회원 정보가 수정되었습니다."
+            }), 200
 
-        # 조회 응답
+        # 단순 조회 응답
         return jsonify(dict(zip(headers, records[member_index - 2]))), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
 
