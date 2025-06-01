@@ -13,7 +13,9 @@ from gspread.utils import rowcol_to_a1
 load_dotenv()
 app = Flask(__name__)
 
-# 상단 정의
+
+
+# 주문 및 수당 헤더 정의
 ORDER_HEADERS = [
     "주문일자", "회원명", "회원번호", "휴대폰번호",
     "제품명", "가격", "PV", "결재방법",
@@ -21,6 +23,7 @@ ORDER_HEADERS = [
 ]
 BONUS_HEADERS = ["기준일자", "합계_좌", "합계_우", "취득점수", "횟수", "달성횟수"]
 
+# Google Sheets 인증
 def get_sheet():
     keyfile_raw = os.getenv("GOOGLE_SHEET_KEY")
     keyfile_dict = json.loads(keyfile_raw)
@@ -34,6 +37,7 @@ def get_sheet():
 def home():
     return "Flask 서버가 실행 중입니다."
 
+# ✅ 제품 주문 등록 API
 @app.route("/add_order", methods=["POST"])
 def add_order():
     try:
@@ -61,14 +65,18 @@ def add_order():
         if not existing:
             order_sheet.append_row(ORDER_HEADERS)
 
+        # 가격과 PV는 숫자형으로 안전하게 변환
+        price = float(data.get("가격", 0))
+        pv = float(data.get("PV", 0))
+
         row = [
             data.get("주문일자", ""),
             member_name,
             member_number,
-            phone_number,   
+            phone_number,
             data.get("제품명", ""),
-            data.get("가격", ""),
-            data.get("PV", ""),
+            price,
+            pv,
             data.get("결재방법", ""),
             data.get("주문고객명", ""),
             data.get("주문자_휴대폰번호", ""),
@@ -78,59 +86,18 @@ def add_order():
         order_sheet.append_row(row)
         return jsonify({"message": "제품주문이 저장되었습니다."})
     except Exception as e:
-        return jsonify({"error": str(e)})
-
-
-
-
-
-
-@app.route("/find_member", methods=["POST"])
-def find_member():
-    try:
-        data = request.get_json()
-        name = data.get("name", "").strip()
-
-        if not name:
-            return jsonify({"error": "이름을 입력해야 합니다."}), 400
-
-        sheet = get_sheet()
-        db_records = sheet.get_all_records()
-        member_info = next((r for r in db_records if r.get("회원명") == name), None)
-
-        if not member_info:
-            return jsonify({"error": f"'{name}' 회원을 찾을 수 없습니다."}), 404
-
-        # 전체 컬럼 순서에 맞춰 필요한 정보만 반환
-        fields = [
-            "회원명", "휴대폰번호", "회원번호", "비밀번호", "가입일자", "생년월일", "통신사", "친밀도", "근무처", "계보도",
-            "소개한분", "주소", "메모", "코드", "카드사", "카드주인", "카드번호", "유효기간", "비번", "카드생년월일",
-            "분류", "회원단계", "연령/성별", "직업", "가족관계", "니즈", "애용제품", "콘텐츠", "습관챌린지",
-            "비즈니스시스템", "GLC프로젝트", "리더님", "NO"
-        ]
-
-        result = {field: member_info.get(field, "") for field in fields}
-        return jsonify(result)
-
-    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
-
-
-
-
-
+# ✅ 회원 조회 또는 수정 API
 @app.route("/find_member", methods=["POST"])
 def find_member():
     try:
         data = request.get_json()
         name = data.get("name", "").strip()
-
         if not name:
             return jsonify({"error": "이름을 입력해야 합니다."}), 400
 
-        # "수정", "변경", "고쳐" 중 하나라도 포함된 경우 수정 요청으로 처리
+        # "수정", "변경", "고쳐" 키워드 검사
         수정데이터 = None
         for key in data.keys():
             if key in ["수정", "변경", "고쳐"]:
@@ -152,10 +119,10 @@ def find_member():
         if member_index is None:
             return jsonify({"error": f"'{name}' 회원을 찾을 수 없습니다."}), 404
 
+        # 수정 요청인 경우
         if 수정데이터:
-            # 수정 처리
             col_count = len(headers)
-            range_notation = f"A{member_index}:{rowcol_to_a1(member_index, col_count).split(str(member_index))[0]}{member_index}"
+            range_notation = f"A{member_index}:{rowcol_to_a1(member_index, col_count)}"
             current_row = sheet.get(range_notation)[0]
             updated_row = current_row[:]
 
@@ -171,15 +138,13 @@ def find_member():
             sheet.update(range_notation, [updated_row])
             return jsonify({"message": f"{name} 회원 정보가 수정되었습니다."}), 200
 
-        # 조회 처리
+        # 조회 요청인 경우
         member_dict = dict(zip(headers, records[member_index - 2]))
         return jsonify(member_dict), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
-
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)  # ✅ Render에서 감지 가능한 포트
+    app.run(host="0.0.0.0", port=10000)
+
