@@ -11,3 +11,4 @@ gspread
 oauth2client
 python-dotenv
 
+pip freeze > requirements.txt
