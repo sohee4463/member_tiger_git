@@ -116,59 +116,5 @@ def find_member():
 
 
 
-
-
-
-
-
-
-
-@app.route("/add_support_bonus", methods=["POST"])
-def add_support_bonus(): 
-    try:
-        data = request.get_json()
-
-        # ✅ 저장 대상 항목
-        base_fields = ["기준일자", "합계_좌", "합계_우", "취득점수", "관리자직급"]
-        if any(data.get(field) is None for field in base_fields):
-            return jsonify({"error": "필수 항목이 누락되었습니다."}), 400
-
-        # 🔢 횟수 계산: 취득점수 15점당 1회
-        try:
-            score = int(data.get("취득점수"))
-            count = score // 15
-        except:
-            return jsonify({"error": "취득점수는 숫자여야 합니다."}), 400
-
-        # 📤 스프레드시트 저장
-        sheet = get_sheet().spreadsheet
-        try:
-            ws = sheet.worksheet("후원수당파일")
-        except:
-            ws = sheet.add_worksheet(title="후원수당파일", rows="1000", cols="20")
-
-        existing = ws.get_all_values()
-        if not existing or all(cell == '' for cell in existing[0]):
-            # 1행 비워두기 (헤더 없이)
-            ws.update("A1:G1", [[""]])
-
-        # A2부터 append
-        row = [
-            data.get("기준일자", ""),
-            data.get("합계_좌", ""),
-            data.get("합계_우", ""),
-            data.get("취득점수", ""),
-            data.get("관리자직급", ""),
-            count,
-        ]
-        ws.insert_row(row, index=2)
-
-        return jsonify({"message": "후원수당 정보가 저장되었습니다."})
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)  # ✅ Render에서 감지 가능한 포트
