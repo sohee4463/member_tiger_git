@@ -8,6 +8,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from datetime import datetime
+from gspread.utils import rowcol_to_a1
 
 load_dotenv()
 app = Flask(__name__)
@@ -113,6 +114,70 @@ def find_member():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+
+
+
+
+
+@app.route("/find_member", methods=["POST"])
+def find_member():
+    try:
+        data = request.get_json()
+        name = data.get("name", "").strip()
+
+        if not name:
+            return jsonify({"error": "이름을 입력해야 합니다."}), 400
+
+        # "수정", "변경", "고쳐" 중 하나라도 포함된 경우 수정 요청으로 처리
+        수정데이터 = None
+        for key in data.keys():
+            if key in ["수정", "변경", "고쳐"]:
+                수정데이터 = data.get(key)
+                break
+
+        sheet = get_sheet()
+        db_values = sheet.get_all_values()
+        headers = db_values[0]
+        records = db_values[1:]
+
+        # 회원 인덱스 찾기
+        member_index = None
+        for idx, row in enumerate(records, start=2):
+            if name == row[headers.index("회원명")]:
+                member_index = idx
+                break
+
+        if member_index is None:
+            return jsonify({"error": f"'{name}' 회원을 찾을 수 없습니다."}), 404
+
+        if 수정데이터:
+            # 수정 처리
+            col_count = len(headers)
+            range_notation = f"A{member_index}:{rowcol_to_a1(member_index, col_count).split(str(member_index))[0]}{member_index}"
+            current_row = sheet.get(range_notation)[0]
+            updated_row = current_row[:]
+
+            for key, value in 수정데이터.items():
+                if key in headers:
+                    col_index = headers.index(key)
+                    if col_index < len(updated_row):
+                        updated_row[col_index] = value
+                    else:
+                        updated_row.extend([""] * (col_index - len(updated_row) + 1))
+                        updated_row[col_index] = value
+
+            sheet.update(range_notation, [updated_row])
+            return jsonify({"message": f"{name} 회원 정보가 수정되었습니다."}), 200
+
+        # 조회 처리
+        member_dict = dict(zip(headers, records[member_index - 2]))
+        return jsonify(member_dict), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 
 
