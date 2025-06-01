@@ -97,19 +97,14 @@ def find_member():
         if not name:
             return jsonify({"error": "이름을 입력해야 합니다."}), 400
 
-        # "수정", "변경", "고쳐" 키워드 검사
-        수정데이터 = None
-        for key in data.keys():
-            if key in ["수정", "변경", "고쳐"]:
-                수정데이터 = data.get(key)
-                break
+        # "수정", "변경", "고쳐" 키워드 중 하나라도 존재하면 수정 처리
+        수정데이터 = data.get("수정") or data.get("변경") or data.get("고쳐")
 
         sheet = get_sheet()
         db_values = sheet.get_all_values()
         headers = db_values[0]
         records = db_values[1:]
 
-        # 회원 인덱스 찾기
         member_index = None
         for idx, row in enumerate(records, start=2):
             if name == row[headers.index("회원명")]:
@@ -119,8 +114,8 @@ def find_member():
         if member_index is None:
             return jsonify({"error": f"'{name}' 회원을 찾을 수 없습니다."}), 404
 
-        # 수정 요청인 경우
         if 수정데이터:
+            from gspread.utils import rowcol_to_a1
             col_count = len(headers)
             range_notation = f"A{member_index}:{rowcol_to_a1(member_index, col_count)}"
             current_row = sheet.get(range_notation)[0]
@@ -138,12 +133,15 @@ def find_member():
             sheet.update(range_notation, [updated_row])
             return jsonify({"message": f"{name} 회원 정보가 수정되었습니다."}), 200
 
-        # 조회 요청인 경우
-        member_dict = dict(zip(headers, records[member_index - 2]))
-        return jsonify(member_dict), 200
+        # 조회 응답
+        return jsonify(dict(zip(headers, records[member_index - 2]))), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
