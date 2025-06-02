@@ -11,6 +11,9 @@ from gspread.utils import rowcol_to_a1
 load_dotenv()
 app = Flask(__name__)
 
+
+
+
 # 자연어 명령 키워드 매핑
 UPDATE_KEYS = {
     "회원": ["회원수정", "회원내용수정", "회원내용을 수정", "회원변경", "회원내용변경", "회원내용을 고쳐", "수정", "변경", "고쳐"],
@@ -67,52 +70,122 @@ def find_member():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+
+
+
+
+
+
 # ✅ 회원 수정
-@app.route("/update_member", methods=["POST"])
-def update_member():
+from flask import Flask, request, jsonify
+import os, json, re
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from dotenv import load_dotenv
+
+# ✅ 환경 변수 로드
+load_dotenv()
+app = Flask(__name__)
+
+# ✅ Google Sheet 연동 함수
+def get_sheet():
+    keyfile_dict = json.loads(os.getenv("GOOGLE_SHEET_KEY"))
+    keyfile_dict["private_key"] = keyfile_dict["private_key"].replace("\\n", "\n")
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, scope)
+    client = gspread.authorize(creds)
+    return client.open("members_list_main").worksheet("DB")
+
+# ✅ 자연어 파싱 함수
+def parse_request(text):
+    result = {
+        "회원명": None,
+        "수정목록": []
+    }
+
+    # 회원명 추출: 앞부분 또는 "홍길동 회원의"
+    name_match = re.search(r'^([가-힣]{2,3})', text)
+    if not name_match:
+        name_match = re.search(r'([가-힣]{2,3})\s*회원[의은는가이]', text)
+    if name_match:
+        result["회원명"] = name_match.group(1)
+
+    # 문장 분리
+    문장들 = re.split(r'[.。\n]|그리고|,|그리고 나서|또는', text)
+
+    # 필드 + 값 추출
+    for 문장 in 문장들:
+        m = re.search(r'(휴대폰번호|계보도|주소|이메일|직급|친밀도)\s*(?:를|은|는)?\s*([\d가-힣A-Za-z\- ]{2,})\s*(?:으로|로)?\s*(?:수정|변경|바꿔|고쳐)', 문장)
+        if m:
+            필드 = m.group(1).strip()
+            값 = m.group(2).strip()
+            result["수정목록"].append({"필드": 필드, "값": 값})
+    return result
+
+# ✅ 자연어 기반 회원 수정 API
+@app.route("/nlp_update", methods=["POST"])
+def nlp_update():
     try:
-        data = request.get_json()
-        name = data.get("회원명", "").strip()
-        if not name:
-            return jsonify({"error": "회원명을 입력해야 합니다."}), 400
+        raw_data = request.data.decode("utf-8")
+        data = json.loads(raw_data)
+        요청문 = data.get("요청문", "").strip()
 
-        section, updates = find_update_section(data)
-        if section != "회원" or not updates:
-            return jsonify({"error": "유효한 회원 수정 요청이 아닙니다."}), 400
+        if not 요청문:
+            return jsonify({"error": "요청문이 비어 있습니다."}), 400
 
+        parsed = parse_request(요청문)
+        name = parsed["회원명"]
+        수정목록 = parsed["수정목록"]
+
+        if not name or not 수정목록:
+            return jsonify({"error": "회원명 또는 수정 필드를 인식할 수 없습니다."}), 400
+
+        # 시트 열기
         sheet = get_sheet()
-        db = sheet.get_all_values()
-        headers, rows = db[0], db[1:]
+        db = sheet.get_all_records()
 
-        for idx, row in enumerate(rows, start=2):
-            if row[headers.index("회원명")] == name:
-                range_notation = f"A{idx}:{rowcol_to_a1(idx, len(headers))}"
-                current_row = sheet.get(range_notation)[0]
-                updated_row = current_row[:]
-                updated_fields = []
+        # 회원명 존재 확인
+        matching_rows = [i for i, row in enumerate(db) if row.get("회원명") == name]
+        if len(matching_rows) == 0:
+            return jsonify({"error": f"'{name}' 회원을 찾을 수 없습니다."}), 404
+        if len(matching_rows) > 1:
+            return jsonify({"error": f"'{name}' 회원이 중복됩니다. 고유한 이름만 지원합니다."}), 400
 
-                for key, value in updates.items():
-                    if key in headers:
-                        col_idx = headers.index(key)
-                        if col_idx < len(updated_row):
-                            updated_row[col_idx] = value
-                        else:
-                            updated_row.extend([""] * (col_idx - len(updated_row) + 1))
-                            updated_row[col_idx] = value
-                        updated_fields.append(key)
+        row_index = matching_rows[0] + 2  # 헤더 포함으로 +2
 
-                sheet.update(range_notation, [updated_row])
-                return jsonify({
-                    "status": "success",
-                    "updated": True,
-                    "name": name,
-                    "updated_fields": updated_fields,
-                    "message": f"{name} 회원 정보가 수정되었습니다."
-                }), 200
+        # 헤더 정규화
+        raw_headers = sheet.row_values(1)
+        headers = [h.strip().lower() for h in raw_headers]
 
-        return jsonify({"error": f"'{name}' 회원을 찾을 수 없습니다."}), 404
+        # 필드 수정
+        for 항목 in 수정목록:
+            필드, 값 = 항목["필드"], 항목["값"]
+            필드정규화 = 필드.strip().lower()
+            if 필드정규화 not in headers:
+                return jsonify({"error": f"'{필드}' 필드는 시트에 존재하지 않습니다. 수정할 수 없습니다."}), 400
+            col_index = headers.index(필드정규화) + 1
+            sheet.update_cell(row_index, col_index, 값)
+
+        return jsonify({"status": "success", "회원명": name, "수정": 수정목록}), 200
+
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+# ✅ Flask 서버 실행
+if __name__ == "__main__":
+    app.run(port=10000, debug=True)
+
+
+
+
+
+
+
+
+
 
 # ✅ 제품 주문 등록
 @app.route("/add_order", methods=["POST"])
