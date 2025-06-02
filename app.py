@@ -37,17 +37,16 @@ def get_sheet():
     client = gspread.authorize(creds)
     return client.open("members_list_main").worksheet("DB")
 
-# 자연어 명령에서 수정 섹션 추출
-def find_update_section(data):
-    for section, keys in UPDATE_KEYS.items():
-        for key in keys:
-            if key in data:
-                return section, data[key]
-    return None, None
+
 
 @app.route("/")
 def home():
     return "Flask 서버가 실행 중입니다."
+
+
+
+
+
 
 # ✅ 회원 조회
 @app.route("/find_member", methods=["POST"])
@@ -75,28 +74,7 @@ def find_member():
 
 
 
-
-
 # ✅ 회원 수정
-from flask import Flask, request, jsonify
-import os, json, re
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from dotenv import load_dotenv
-
-# ✅ 환경 변수 로드
-load_dotenv()
-app = Flask(__name__)
-
-# ✅ Google Sheet 연동 함수
-def get_sheet():
-    keyfile_dict = json.loads(os.getenv("GOOGLE_SHEET_KEY"))
-    keyfile_dict["private_key"] = keyfile_dict["private_key"].replace("\\n", "\n")
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, scope)
-    client = gspread.authorize(creds)
-    return client.open("members_list_main").worksheet("DB")
-
 # ✅ 자연어 파싱 함수
 def parse_request(text):
     result = {
@@ -173,13 +151,6 @@ def nlp_update():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-
-# ✅ Flask 서버 실행
-if __name__ == "__main__":
-    app.run(port=10000, debug=True)
-
-
-
 
 
 
