@@ -1,11 +1,15 @@
 import os
 import json
+import re
 import pandas as pd
-from flask import Flask, request, jsonify
 import gspread
+import gspread
+from flask import Flask, request, jsonify
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from gspread.utils import rowcol_to_a1
+
+
 
 # 환경 변수 로드
 load_dotenv()
@@ -42,6 +46,7 @@ def get_sheet():
 @app.route("/")
 def home():
     return "Flask 서버가 실행 중입니다."
+
 
 
 
@@ -94,10 +99,12 @@ def parse_request(text):
 
     # 필드 + 값 추출
     for 문장 in 문장들:
-        m = re.search(r'(휴대폰번호|계보도|주소|이메일|직급|친밀도)\s*(?:를|은|는)?\s*([\d가-힣A-Za-z\- ]{2,})\s*(?:으로|로)?\s*(?:수정|변경|바꿔|고쳐)', 문장)
+        m = re.search(r'(휴대폰번호|계보도|주소|직급|친밀도)\s*(?:를|은|는)?\s*([\d가-힣A-Za-z\- ]{2,})\s*(?:으로|로)?\s*(?:수정|변경|바꿔|고쳐)', 문장)
         if m:
             필드 = m.group(1).strip()
             값 = m.group(2).strip()
+            # ✅ 값 후처리: '으로', '로' 제거
+            값 = re.sub(r'(으로|로)$', '', 값)            
             result["수정목록"].append({"필드": 필드, "값": 값})
     return result
 
