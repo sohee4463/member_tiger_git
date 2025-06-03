@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 > nul
 setlocal enabledelayedexpansion
 
 :: 날짜 및 시간 가져오기
@@ -25,4 +26,5 @@ echo 💡 커밋 메시지: %COMMIT_MSG%
 
 pause
 endlocal
+
 
