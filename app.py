@@ -3,19 +3,15 @@ import json
 import re
 import pandas as pd
 import gspread
+import gspread
 from flask import Flask, request, jsonify
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from gspread.utils import rowcol_to_a1
 
-
-
 # 환경 변수 로드
 load_dotenv()
 app = Flask(__name__)
-
-
-
 
 # 자연어 명령 키워드 매핑
 UPDATE_KEYS = {
@@ -31,6 +27,7 @@ ORDER_HEADERS = [
     "주문고객명", "주문자_휴대폰번호", "배송처", "수령확인"
 ]
 
+
 # 공통 구글 시트 접근 함수
 def get_sheet():
     keyfile_dict = json.loads(os.getenv("GOOGLE_SHEET_KEY"))
@@ -41,15 +38,9 @@ def get_sheet():
     return client.open("members_list_tiger").worksheet("DB")
 
 
-
 @app.route("/")
 def home():
     return "Flask 서버가 실행 중입니다."
-
-
-
-
-
 
 
 # ✅ 회원 조회
@@ -72,10 +63,6 @@ def find_member():
         return jsonify({"error": f"'{name}' 회원을 찾을 수 없습니다."}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
-
-
 
 
 # ✅ 회원 수정
@@ -103,9 +90,10 @@ def parse_request(text):
             필드 = m.group(1).strip()
             값 = m.group(2).strip()
             # ✅ 값 후처리: '으로', '로' 제거
-            값 = re.sub(r'(으로|로)$', '', 값)            
+            값 = re.sub(r'(으로|로)$', '', 값)
             result["수정목록"].append({"필드": 필드, "값": 값})
     return result
+
 
 # ✅ 자연어 기반 회원 수정 API
 @app.route("/nlp_update", methods=["POST"])
@@ -159,11 +147,6 @@ def nlp_update():
         return jsonify({"error": str(e)}), 500
 
 
-
-
-
-
-
 # ✅ 제품 주문 등록
 @app.route("/add_order", methods=["POST"])
 def add_order():
@@ -206,6 +189,7 @@ def add_order():
         return jsonify({"message": "제품주문이 저장되었습니다."}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 # ✅ 후원수당 정리
 @app.route("/trigger_bonus_by_sheet", methods=["POST"])
@@ -266,9 +250,8 @@ def trigger_bonus_by_sheet():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
 # 서버 실행
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000, debug=True)
+    app.run(host="0.0.0.0", port=10000)
 
-
-    
