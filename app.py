@@ -3,7 +3,6 @@ import json
 import re
 import pandas as pd
 import gspread
-import gspread
 from flask import Flask, request, jsonify
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
@@ -269,6 +268,7 @@ def trigger_bonus_by_sheet():
 
 # 서버 실행
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(host="0.0.0.0", port=10000, debug=True)
+
 
     
