@@ -3,11 +3,12 @@ import json
 import re
 import pandas as pd
 import gspread
-import gspread
 from flask import Flask, request, jsonify
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from gspread.utils import rowcol_to_a1
+from datetime import datetime
+
 
 
 
@@ -32,7 +33,7 @@ ORDER_HEADERS = [
     "주문고객명", "주문자_휴대폰번호", "배송처", "수령확인"
 ]
 
-# 공통 구글 시트 접근 함수
+# ✅ Google Sheets 연동
 def get_sheet():
     keyfile_dict = json.loads(os.getenv("GOOGLE_SHEET_KEY"))
     keyfile_dict["private_key"] = keyfile_dict["private_key"].replace("\\n", "\n")
@@ -46,6 +47,9 @@ def get_sheet():
 @app.route("/")
 def home():
     return "Flask 서버가 실행 중입니다."
+
+
+
 
 
 
@@ -73,6 +77,9 @@ def find_member():
         return jsonify({"error": f"'{name}' 회원을 찾을 수 없습니다."}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+
 
 
 
@@ -198,7 +205,7 @@ def add_order():
             float(data.get("가격", 0)),
             float(data.get("PV", 0)),
             data.get("결재방법", ""),
-            data.get("주문고객명", ""),
+            data.get("주문자_고객명", ""),
             data.get("주문자_휴대폰번호", ""),
             data.get("배송처", ""),
             data.get("수령확인", "")
@@ -207,6 +214,58 @@ def add_order():
         return jsonify({"message": "제품주문이 저장되었습니다."}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+
+# ✅ Google Sheets 연동
+def get_product_order_sheet():
+    keyfile_dict = json.loads(os.getenv("GOOGLE_SHEET_KEY"))
+    keyfile_dict["private_key"] = keyfile_dict["private_key"].replace("\\n", "\n")
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, scope)
+    client = gspread.authorize(creds)
+    return client.open("members_list_main").worksheet("제품주문")
+
+# ✅ 주문일자 처리
+def process_order_date(raw_date: str) -> str:
+    if not raw_date or raw_date.strip() == "":
+        return "=TODAY()"
+    raw_date = raw_date.strip()
+    if "오늘" in raw_date:
+        return "=TODAY()"
+    elif "어제" in raw_date:
+        return "=TODAY()-1"
+    elif "내일" in raw_date:
+        return "=TODAY()+1"
+    try:
+        datetime.strptime(raw_date, "%Y-%m-%d")
+        return raw_date
+    except ValueError:
+        return "=TODAY()"
+
+# ✅ 시트에 주문 삽입
+def insert_order_row(order_data):
+    sheet = get_product_order_sheet()
+    headers = sheet.row_values(1)
+    order_data["주문일자"] = process_order_date(order_data.get("주문일자", ""))
+    row = [order_data.get(h, "") for h in headers]
+    sheet.insert_row(row, index=2)
+
+# ✅ Flask API 라우터
+@app.route("/save_order", methods=["POST"])
+def save_order():
+    try:
+        order_data = request.get_json()
+        if not order_data:
+            return jsonify({"error": "주문 데이터를 입력해 주세요."}), 400
+        insert_order_row(order_data)
+        return jsonify({"status": "success", "message": "주문이 저장되었습니다."}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
+
 
 # ✅ 후원수당 정리
 @app.route("/trigger_bonus_by_sheet", methods=["POST"])
@@ -271,4 +330,3 @@ def trigger_bonus_by_sheet():
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
 
-    
