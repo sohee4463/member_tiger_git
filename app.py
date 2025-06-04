@@ -62,7 +62,9 @@ def find_member():
 
         return jsonify({"error": f"'{name}' 회원을 찾을 수 없습니다."}), 404
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        print(traceback.format_exc())  # 터미널에서 실제 에러 내용 확인!
+        return jsonify({"error": repr(e)}), 500
 
 
 # ✅ 회원 수정
