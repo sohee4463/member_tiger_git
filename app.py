@@ -60,14 +60,26 @@ def parse_request(text):
 
 
 
-# ✅ Google Sheets 연동
+
+
+# ✅ Google Sheets 연동 함수
 def get_worksheet(sheet_name):
-    keyfile_dict = json.loads(os.getenv("GOOGLE_SHEET_KEY"))
-    keyfile_dict["private_key"] = keyfile_dict["private_key"].replace("\\n", "\n")
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, scope)
-    client = gspread.authorize(creds)
-    return client.open("members_list_main").worksheet(sheet_name)
+    try:
+        keyfile_dict = json.loads(os.getenv("GOOGLE_SHEET_KEY"))
+        keyfile_dict["private_key"] = keyfile_dict["private_key"].replace("\\n", "\n")
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, scope)
+        client = gspread.authorize(creds)
+        sheet = client.open("members_list_main")
+        return sheet.worksheet(sheet_name)
+    except gspread.exceptions.WorksheetNotFound:
+        traceback.print_exc()
+        raise Exception(f"[ERROR] 시트 '{sheet_name}'를 찾을 수 없습니다.")
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"[ERROR] get_worksheet 오류: {str(e)}")
+
+
 
 
 @app.route("/")
@@ -486,7 +498,7 @@ def generate_tags(text):
     top_keywords = [word for word, _ in Counter(nouns).most_common(5)]
     return top_keywords
 
-def find_similar_memos(sheet, tags, limit=5):
+def find_similar_memos(sheet, tags, limit=5, sort_by="tag"):  # ✅ sort_by 추가됨
     values = sheet.get_all_values()[1:]  # 헤더 제외
     results = []
     for row in values:
@@ -545,60 +557,77 @@ def extract_member_and_content(text):
         content = "(상담 내용 없음)"
     return member, content
 
-# ✅ 상담일지 저장 API
+
+
+
+
+
+
+
+
 @app.route("/add_counseling", methods=["POST"])
 def add_counseling():
     data = request.get_json()
-    text = data.get("요청문", "")
-    mode = data.get("mode", "공유").strip().lower()
+    text = data.get("요청문", "").strip()
+    mode = str(data.get("mode", "")).strip().lower()
     allow_unregistered = data.get("allow_unregistered", False)
+    sort_by = data.get("sort_by", "tag")
 
+    # ✅ 선택 번호 해석
+    mode_mapping = {
+        "1": "공유", "공유": "공유",
+        "2": "개인", "개인": "개인",
+        "3": "취소", "취소": "취소"
+    }
+    mode = mode_mapping.get(mode, mode)  # 숫자도 문자열 처리
+
+    # ✅ 취소 선택 시 중단
+    if mode == "취소":
+        return jsonify({"message": "상담일지 저장이 취소되었습니다."}), 200
+
+    # ✅ 기본 유효성 검사
     if not text:
         return jsonify({"error": "요청문이 비어 있습니다."}), 400
     if mode not in ["공유", "개인"]:
-        return jsonify({"error": "mode 값은 '공유' 또는 '개인'만 가능합니다."}), 400
+        return jsonify({"error": "mode 값은 '1'(공유), '2'(개인), '3'(취소) 중 하나여야 합니다."}), 400
     if not is_counseling_command(text):
         return jsonify({"message": "상담일지 요청이 아닙니다."}), 200
 
+    # ✅ 정보 추출
     member, content = extract_member_and_content(text)
     date = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # 미지정 회원일 경우 저장 차단 (옵션)
+    # ✅ 미등록 회원 차단 (선택)
     if member == "미지정" and not allow_unregistered:
-        return jsonify({"error": "회원명을 인식할 수 없습니다. 등록된 회원이 아니면 저장되지 않습니다."}), 400
+        return jsonify({"error": "회원명을 인식할 수 없습니다. 등록된 회원이 아닙니다."}), 400
 
-    # 시트 선택
+    # ✅ 시트 선택
     sheet = get_mymemo_sheet() if mode == "개인" else get_counseling_sheet()
     if not sheet:
-        return jsonify({"error": "시트 접근에 실패했습니다."}), 500
+        return jsonify({"error": "시트 접근 실패"}), 500
 
     try:
         sheet.append_row([member, date, content])
     except Exception as e:
-        import traceback
-        traceback.print_exc()
         return jsonify({"error": f"상담일지 저장 실패: {str(e)}"}), 500
 
-    # 응답 생성
+    # ✅ 응답 메시지
     response = {
-        "message": f"{member}님의 상담일지가 저장되었습니다.",
+        "message": f"{member}님의 상담일지가 저장되었습니다. (→ {'개인메모' if mode == '개인' else '공유 상담일지'})",
         "member": member,
         "mode": mode,
         "date": date,
         "content": content
     }
 
-    # 개인 모드: 태그 및 유사 추천 추가
+    # ✅ 개인 모드: 태그/유사 추천
     if mode == "개인":
         tags = generate_tags(content)
-        recommendations = find_similar_memos(sheet, tags, limit=5)
+        recommendations = find_similar_memos(sheet, tags, limit=5, sort_by="tag")
         response["자동_태그"] = tags
         response["유사_상담기록"] = recommendations
-
-    if member == "미지정":
-        response["warning"] = "등록된 회원명에서 찾을 수 없어 '미지정'으로 저장되었습니다."
-
     return jsonify(response), 200
+
 
 
 
@@ -664,6 +693,63 @@ def search_memo_by_tags():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
+
+
+
+
+def get_worksheet(sheet_name):
+    try:
+        import json, os
+        from oauth2client.service_account import ServiceAccountCredentials
+        import gspread
+
+        keyfile_dict = json.loads(os.getenv("GOOGLE_SHEET_KEY"))
+        keyfile_dict["private_key"] = keyfile_dict["private_key"].replace("\\n", "\n")
+        scope = [
+            "https://spreadsheets.google.com/feeds",
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, scope)
+        client = gspread.authorize(creds)
+
+        # ✅ 연결된 스프레드시트 이름
+        sheet = client.open("members_list_main")
+
+        # ✅ 정확한 시트명 요청
+        worksheet = sheet.worksheet(sheet_name)
+        return worksheet
+
+    except gspread.exceptions.WorksheetNotFound:
+        raise Exception(f"[ERROR] 시트 '{sheet_name}'를 찾을 수 없습니다.")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise Exception(f"[ERROR] get_worksheet 오류: {str(e)}")
+
+
+
+
+
+
+@app.route("/debug_sheets")
+def debug_sheets():
+    try:
+        keyfile_dict = json.loads(os.getenv("GOOGLE_SHEET_KEY"))
+        keyfile_dict["private_key"] = keyfile_dict["private_key"].replace("\\n", "\n")
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, scope)
+        client = gspread.authorize(creds)
+        sheet = client.open("members_list_main")
+        titles = [ws.title for ws in sheet.worksheets()]
+        return jsonify({"시트목록": titles})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
 
 
 
