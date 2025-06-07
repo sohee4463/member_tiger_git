@@ -8,6 +8,8 @@ from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from gspread.utils import rowcol_to_a1
 from datetime import datetime
+from collections import Counter
+
 
 
 
@@ -85,8 +87,15 @@ def get_ss_sheet():
 def get_counseling_sheet():
     return get_worksheet("상담일지")
 
-def get_ltscounseling_sheet():
-    return get_worksheet("이태수메모")
+def get_mymemo_sheet():
+    return get_worksheet("개인메모")
+
+def get_dailyrecord_sheet():
+    return get_worksheet("활동일지")
+
+def get_image_sheet():
+    return get_worksheet("사진저장")
+
 
 
 
@@ -448,6 +457,219 @@ def trigger_bonus_by_sheet():
         return jsonify({"message": "후원수당 정리 결과가 시트에 저장되었습니다."}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def extract_nouns(text):
+    return re.findall(r'[가-힣]{2,}', text)
+
+def generate_tags(text):
+    nouns = extract_nouns(text)
+    top_keywords = [word for word, _ in Counter(nouns).most_common(5)]
+    return top_keywords
+
+def find_similar_memos(sheet, tags, limit=5):
+    values = sheet.get_all_values()[1:]  # 헤더 제외
+    results = []
+    for row in values:
+        if len(row) < 3:
+            continue
+        member, date_str, content = row[0], row[1], row[2]
+        try:
+            parsed_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
+        except ValueError:
+            continue
+        memo_tags = extract_nouns(content)
+        similarity = len(set(tags) & set(memo_tags))
+        if similarity > 0:
+            results.append({
+                "회원명": member,
+                "날짜": date_str,
+                "내용": content,
+                "일치_태그수": similarity,
+                "날짜_obj": parsed_date
+            })
+
+    results.sort(key=lambda x: (x["일치_태그수"], x["날짜_obj"]), reverse=True)
+    for r in results:
+        del r["날짜_obj"]
+    return results[:limit]
+
+# 📄 시트 접근 함수 (실제 구현에서는 gspread 등과 연결 필요)
+def get_worksheet(name): pass
+def get_counseling_sheet(): return get_worksheet("상담일지")
+def get_mymemo_sheet(): return get_worksheet("개인메모")
+def get_db_sheet(): return get_worksheet("DB")
+
+# ✅ 등록된 회원명 리스트 추출
+def get_registered_names():
+    db_values = get_db_sheet().get_all_values()
+    return [row[0] for row in db_values[1:] if row]
+
+# ✅ 상담일지 등록 명령 판단
+def is_counseling_command(text):
+    return any(k in text for k in ["상담일지", "상담메모"]) and any(w in text for w in ["기록", "저장", "등록"])
+
+# ✅ 회원명 및 상담내용 추출
+def extract_member_and_content(text):
+    registered_names = get_registered_names()
+    member = "미지정"
+    for name in registered_names:
+        if name in text:
+            member = name
+            break
+    content_match = re.search(r"상담내용[:：]?\s*(.*)", text)
+    if content_match:
+        content = content_match.group(1).strip()
+    else:
+        content = text.split(member, 1)[-1].strip() if member != "미지정" else text
+    if not content:
+        content = "(상담 내용 없음)"
+    return member, content
+
+# ✅ 상담일지 저장 API
+@app.route("/add_counseling", methods=["POST"])
+def add_counseling():
+    data = request.get_json()
+    text = data.get("요청문", "")
+    mode = data.get("mode", "공유").strip().lower()
+    allow_unregistered = data.get("allow_unregistered", False)
+
+    if not text:
+        return jsonify({"error": "요청문이 비어 있습니다."}), 400
+    if mode not in ["공유", "개인"]:
+        return jsonify({"error": "mode 값은 '공유' 또는 '개인'만 가능합니다."}), 400
+    if not is_counseling_command(text):
+        return jsonify({"message": "상담일지 요청이 아닙니다."}), 200
+
+    member, content = extract_member_and_content(text)
+    date = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    # 미지정 회원일 경우 저장 차단 (옵션)
+    if member == "미지정" and not allow_unregistered:
+        return jsonify({"error": "회원명을 인식할 수 없습니다. 등록된 회원이 아니면 저장되지 않습니다."}), 400
+
+    # 시트 선택
+    sheet = get_mymemo_sheet() if mode == "개인" else get_counseling_sheet()
+    if not sheet:
+        return jsonify({"error": "시트 접근에 실패했습니다."}), 500
+
+    try:
+        sheet.append_row([member, date, content])
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"상담일지 저장 실패: {str(e)}"}), 500
+
+    # 응답 생성
+    response = {
+        "message": f"{member}님의 상담일지가 저장되었습니다.",
+        "member": member,
+        "mode": mode,
+        "date": date,
+        "content": content
+    }
+
+    # 개인 모드: 태그 및 유사 추천 추가
+    if mode == "개인":
+        tags = generate_tags(content)
+        recommendations = find_similar_memos(sheet, tags, limit=5)
+        response["자동_태그"] = tags
+        response["유사_상담기록"] = recommendations
+
+    if member == "미지정":
+        response["warning"] = "등록된 회원명에서 찾을 수 없어 '미지정'으로 저장되었습니다."
+
+    return jsonify(response), 200
+
+
+
+
+
+
+
+
+
+
+@app.route("/search_memo_by_tags", methods=["POST"])
+def search_memo_by_tags():
+    try:
+        data = request.get_json()
+        input_tags = data.get("tags", [])
+        limit = int(data.get("limit", 10))
+        sort_by = data.get("sort_by", "date").lower()
+        min_match = int(data.get("min_match", 1))
+
+        if not input_tags:
+            return jsonify({"error": "태그 리스트가 비어 있습니다."}), 400
+        if sort_by not in ["date", "tag"]:
+            return jsonify({"error": "sort_by는 'date' 또는 'tag'만 가능합니다."}), 400
+
+        sheet = get_mymemo_sheet()
+        values = sheet.get_all_values()[1:]  # 헤더 제외
+        results = []
+
+        for row in values:
+            if len(row) < 3:
+                continue
+            member, date_str, content = row[0], row[1], row[2]
+
+            try:
+                parsed_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
+            except ValueError:
+                continue  # 날짜 형식 오류시 건너뜀
+
+            memo_tags = extract_nouns(content)
+            similarity = len(set(input_tags) & set(memo_tags))
+            if similarity >= min_match:
+                results.append({
+                    "회원명": member,
+                    "날짜": date_str,
+                    "내용": content,
+                    "일치_태그수": similarity,
+                    "날짜_obj": parsed_date
+                })
+
+        # 정렬 조건 적용
+        if sort_by == "tag":
+            results.sort(key=lambda x: (x["일치_태그수"], x["날짜_obj"]), reverse=True)
+        else:  # 기본: 날짜순
+            results.sort(key=lambda x: (x["날짜_obj"], x["일치_태그수"]), reverse=True)
+
+        # 날짜 객체 제거
+        for r in results:
+            del r["날짜_obj"]
+
+        return jsonify({"검색결과": results[:limit]}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+
+
+
+
 
 # 서버 실행
 if __name__ == "__main__":
