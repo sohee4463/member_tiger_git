@@ -114,6 +114,7 @@ def get_worksheet(sheet_name):
         creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, scope)
         client = gspread.authorize(creds)
         sheet = client.open("members_list_main")
+        client = gspread.authorize(creds)
         return sheet.worksheet(sheet_name)
     except gspread.exceptions.WorksheetNotFound:
         traceback.print_exc()
