@@ -499,15 +499,14 @@ def extract_member_and_content(text):
 def add_counseling():
     data = request.get_json()
     text = data.get("요청문", "").strip()
-    selection = data.get("선택번호", "1")  # 사용자가 선택한 번호 (1~5)
+    selection = data.get("선택번호")  # 선택번호는 선택사항
 
     if not text:
         return jsonify({"error": "요청문이 비어 있습니다."}), 400
 
-    # 현재 시간
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # 회원명(name)과 상담내용(content) 분리
+    # 회원명 및 상담내용 분리
     try:
         payload = text.split("상담일지 저장:")[1].strip()
         name = payload.split()[0]
@@ -516,20 +515,34 @@ def add_counseling():
         name = ""
         content = text
 
-    # 선택번호 → 저장 시트 매핑
+    # ✅ 자동 저장 조건 처리
+    for keyword in ["개인메모", "상담일지", "활동일지"]:
+        if keyword in text:
+            ws = get_worksheet(keyword)
+            if ws:
+                ws.append_row([now, name, content, keyword])
+                return jsonify({"message": f"자동으로 '{keyword}' 시트에 저장되었습니다."}), 200
+            else:
+                return jsonify({"error": f"{keyword} 시트를 불러올 수 없습니다."}), 500
+
+    # ✅ 선택 방식 저장
     sheet_map = {
         "1": ["상담일지"],
         "2": ["개인메모"],
         "3": ["상담일지", "활동일지"],
         "4": ["개인메모", "활동일지"],
-        "5": []  # 취소
+        "5": []
     }
 
-    selected_sheets = sheet_map.get(selection, [])
+    if not selection or selection not in sheet_map:
+        return jsonify({
+            "message": "저장 방식을 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소"
+        }), 200
+
+    selected_sheets = sheet_map[selection]
     if not selected_sheets:
         return jsonify({"message": "저장이 취소되었습니다."}), 200
 
-    # 각 시트에 저장
     for sheet_name in selected_sheets:
         ws = get_worksheet(sheet_name)
         if not ws:
@@ -542,6 +555,7 @@ def add_counseling():
         "내용": content
     }), 200
     
+
 
 
 
