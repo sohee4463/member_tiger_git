@@ -19,7 +19,6 @@ from collections import Counter
 
 
 
-
 # ✅ 환경 변수 로드
 load_dotenv()
 app = Flask(__name__)
@@ -495,37 +494,43 @@ def extract_member_and_content(text):
 
 
 
+# 텍스트에서 시트명, 회원명, 내용 추출
+def extract_fields(text):
+    pattern = r"(상담일지|개인메모|활동일지)\s*(저장|기록|등록)\s*([가-힣]{3})\s*(.*)"
+    match = re.search(pattern, text)
+    if match:
+        sheet_name = match.group(1)
+        name = match.group(3)
+        content = match.group(4).strip()
+        return sheet_name, name, content
+    return None, "", text
+
 @app.route("/add_counseling", methods=["POST"])
 def add_counseling():
     data = request.get_json()
     text = data.get("요청문", "").strip()
-    selection = data.get("선택번호")  # 선택번호는 선택사항
+    selection = data.get("선택번호")  # 선택은 선택사항
 
     if not text:
         return jsonify({"error": "요청문이 비어 있습니다."}), 400
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # 회원명 및 상담내용 분리
-    try:
-        payload = text.split("상담일지 저장:")[1].strip()
-        name = payload.split()[0]
-        content = payload.replace(name, "", 1).strip()
-    except:
-        name = ""
-        content = text
+    # ✅ 자동 파싱 시도
+    sheet_name, name, content = extract_fields(text)
+    if sheet_name:
+        ws = get_worksheet(sheet_name)
+        if ws:
+            ws.append_row([now, name, content, sheet_name])
+            return jsonify({
+                "message": f"자동으로 '{sheet_name}' 시트에 저장되었습니다.",
+                "회원명": name,
+                "내용": content
+            }), 200
+        else:
+            return jsonify({"error": f"{sheet_name} 시트를 불러올 수 없습니다."}), 500
 
-    # ✅ 자동 저장 조건 처리
-    for keyword in ["개인메모", "상담일지", "활동일지"]:
-        if keyword in text:
-            ws = get_worksheet(keyword)
-            if ws:
-                ws.append_row([now, name, content, keyword])
-                return jsonify({"message": f"자동으로 '{keyword}' 시트에 저장되었습니다."}), 200
-            else:
-                return jsonify({"error": f"{keyword} 시트를 불러올 수 없습니다."}), 500
-
-    # ✅ 선택 방식 저장
+    # ✅ 선택 방식 저장 (자동 파싱 실패 시)
     sheet_map = {
         "1": ["상담일지"],
         "2": ["개인메모"],
@@ -543,11 +548,20 @@ def add_counseling():
     if not selected_sheets:
         return jsonify({"message": "저장이 취소되었습니다."}), 200
 
-    for sheet_name in selected_sheets:
-        ws = get_worksheet(sheet_name)
+    # 회원명이 없는 경우 추정
+    try:
+        payload = text.split("상담일지 저장:")[1].strip()
+        name = payload.split()[0]
+        content = payload.replace(name, "", 1).strip()
+    except:
+        name = ""
+        content = text
+
+    for sheet in selected_sheets:
+        ws = get_worksheet(sheet)
         if not ws:
-            return jsonify({"error": f"{sheet_name} 시트를 불러올 수 없습니다."}), 500
-        ws.append_row([now, name, content, sheet_name])
+            return jsonify({"error": f"{sheet} 시트를 불러올 수 없습니다."}), 500
+        ws.append_row([now, name, content, sheet])
 
     return jsonify({
         "message": f"{', '.join(selected_sheets)} 시트에 저장되었습니다.",
@@ -555,6 +569,7 @@ def add_counseling():
         "내용": content
     }), 200
     
+
 
 
 
