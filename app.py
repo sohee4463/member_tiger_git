@@ -532,7 +532,7 @@ def add_counseling():
     data = request.get_json()
     text = data.get("요청문", "").strip()
     selection = data.get("선택번호") or data.get("mode")
-    confirm = data.get("confirm")  # 중복일 경우 사용자가 선택한 응답값
+    confirm = data.get("confirm")
 
     if not text:
         return jsonify({"error": "요청문이 비어 있습니다."}), 400
@@ -560,12 +560,11 @@ def add_counseling():
 
     def extract_tags(text):
         keywords = ["불만", "요청", "재방문", "취소", "환불", "일정", "만족", "지연", "지급", "변경", "구매", "안내", "완료"]
-        found = [kw for kw in keywords if kw in text]
-        return ", ".join(found)
+        return ", ".join([kw for kw in keywords if kw in text])
 
     def check_duplicate(ws, name, content):
-        records = ws.get_all_values()
-        for row in records[1:]:
+        rows = ws.get_all_values()
+        for row in rows[1:]:
             if len(row) >= 4 and row[1] == name and row[3] == content:
                 return True
         return False
@@ -578,7 +577,6 @@ def add_counseling():
         "5": []
     }
 
-    # ✅ 이름 및 내용 추출
     try:
         name = text.split()[0]
         content = text.replace(name, "", 1).strip()
@@ -589,7 +587,18 @@ def add_counseling():
     counsel_type = extract_counsel_type(text)
     tags = extract_tags(text)
 
-    # ✅ 1. 수동 저장 우선
+    # ✅ confirm 처리: 다시 저장할지 물어본 후 '1' 선택 시
+    if confirm == "1":
+        return jsonify({
+            "message": "저장할 시트를 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소",
+            "mode": None,
+            "confirming_repeat": True
+        }), 200
+
+    if confirm == "2":
+        return jsonify({"message": "중복 저장이 취소되었습니다.", "mode": "취소"}), 200
+
+    # ✅ 수동 저장 우선
     if selection in sheet_map:
         selected_sheets = sheet_map[selection]
         if not selected_sheets:
@@ -600,7 +609,7 @@ def add_counseling():
             if not ws:
                 return jsonify({"error": f"{sheet} 시트를 불러올 수 없습니다."}), 500
 
-            if not confirm and check_duplicate(ws, name, content):
+            if check_duplicate(ws, name, content):
                 return jsonify({
                     "message": f"⚠️ '{sheet}' 시트에 동일한 기록이 이미 있습니다.\n다시 저장하시겠습니까?\n1. 저장\n2. 취소",
                     "duplicate": True,
@@ -610,10 +619,6 @@ def add_counseling():
                     "sheet": sheet
                 }), 200
 
-            if confirm == "2":
-                return jsonify({"message": "중복 저장이 취소되었습니다.", "mode": "취소"}), 200
-
-            # ✅ 실제 저장 (2행 삽입)
             ws.insert_row([now, name, counsel_type, content, tags, sheet], 2)
 
         return jsonify({
@@ -625,7 +630,7 @@ def add_counseling():
             "mode": ", ".join(selected_sheets)
         }), 200
 
-    # ✅ 2. 자동 저장
+    # ✅ 자동 저장
     if any(kw in text for kw in ["상담일지", "개인메모", "활동일지"]):
         sheet_name, name, content = extract_fields(text)
         counsel_type = extract_counsel_type(text)
@@ -636,7 +641,7 @@ def add_counseling():
             if not ws:
                 return jsonify({"error": f"{sheet_name} 시트를 불러올 수 없습니다."}), 500
 
-            if not confirm and check_duplicate(ws, name, content):
+            if check_duplicate(ws, name, content):
                 return jsonify({
                     "message": f"⚠️ '{sheet_name}' 시트에 동일한 기록이 이미 있습니다.\n다시 저장하시겠습니까?\n1. 저장\n2. 취소",
                     "duplicate": True,
@@ -645,9 +650,6 @@ def add_counseling():
                     "mode": sheet_name,
                     "sheet": sheet_name
                 }), 200
-
-            if confirm == "2":
-                return jsonify({"message": "중복 저장이 취소되었습니다.", "mode": "취소"}), 200
 
             ws.insert_row([now, name, counsel_type, content, tags, sheet_name], 2)
 
@@ -660,12 +662,13 @@ def add_counseling():
                 "mode": sheet_name
             }), 200
 
-    # ✅ 3. 자동저장 조건 없음 + 선택 없음
+    # ✅ 자동 저장 불가 + 선택 없음
     return jsonify({
         "message": "자동 저장 기준에 부합하지 않아 수동 저장이 필요합니다.\n"
                    "다음 중 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소",
         "mode": None
     }), 200
+
 
 
 
