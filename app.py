@@ -468,7 +468,7 @@ def get_registered_names():
 
 # ✅ 상담일지 등록 명령 판단
 def is_counseling_command(text):
-    return any(k in text for k in ["상담일지", "상담메모"]) and any(w in text for w in ["기록", "저장", "등록"])
+    return any(k in text for k in ["상담일지", "개인메모", "활동일지"]) and any(w in text for w in ["기록", "저장", "등록"])
 
 # ✅ 회원명 및 상담내용 추출
 def extract_member_and_content(text):
@@ -490,7 +490,24 @@ def extract_member_and_content(text):
 
 
 
+def extract_tags(text):
+    keywords = ["불만", "요청", "재방문", "취소", "환불", "일정", "만족", "지연", "수당", "회원", "지급", "변경", "구매"]
+    found = [kw for kw in keywords if kw in text]
+    return ", ".join(found)
 
+
+
+def extract_counsel_type(text):
+    if any(kw in text for kw in ["전화", "통화"]):
+        return "전화상담"
+    elif any(kw in text for kw in ["내방", "방문", "사무실"]):
+        return "내방상담"
+    elif any(kw in text for kw in ["문자", "카톡", "톡", "메시지", "메신저"]):
+        return "문자상담"
+    elif any(kw in text for kw in ["외근", "현장", "외부"]):
+        return "외부상담"
+    else:
+        return "기타"
 
 
 
@@ -505,32 +522,65 @@ def extract_fields(text):
         return sheet_name, name, content
     return None, "", text
 
+
+
+
+
+
 @app.route("/add_counseling", methods=["POST"])
 def add_counseling():
     data = request.get_json()
     text = data.get("요청문", "").strip()
-    selection = data.get("선택번호")  # 선택은 선택사항
+    selection = data.get("선택번호")
 
     if not text:
         return jsonify({"error": "요청문이 비어 있습니다."}), 400
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # ✅ 자동 파싱 시도
+    def extract_fields(text):
+        pattern = r"(상담일지|개인메모|활동일지)\s*(저장|기록|등록)\s*([가-힣]{3})\s*(.*)"
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1), match.group(3), match.group(4).strip()
+        return None, "", text
+
+    def extract_counsel_type(text):
+        if any(kw in text for kw in ["전화", "통화"]):
+            return "전화상담"
+        elif any(kw in text for kw in ["내방", "방문", "사무실"]):
+            return "내방상담"
+        elif any(kw in text for kw in ["문자", "카톡", "톡", "메시지", "메신저"]):
+            return "문자상담"
+        elif any(kw in text for kw in ["외근", "현장", "외부"]):
+            return "외부상담"
+        else:
+            return "기타"
+
+    def extract_tags(text):
+        keywords = ["불만", "요청", "재방문", "취소", "환불", "일정", "만족", "지연", "지급", "변경", "구매"]
+        found = [kw for kw in keywords if kw in text]
+        return ", ".join(found)
+
     sheet_name, name, content = extract_fields(text)
+    counsel_type = extract_counsel_type(text)
+    tags = extract_tags(text)
+
     if sheet_name:
         ws = get_worksheet(sheet_name)
         if ws:
-            ws.append_row([now, name, content, sheet_name])
+            ws.append_row([now, name, counsel_type, content, tags, sheet_name])
             return jsonify({
                 "message": f"자동으로 '{sheet_name}' 시트에 저장되었습니다.",
                 "회원명": name,
+                "상담형태": counsel_type,
+                "태그": tags,
                 "내용": content
             }), 200
         else:
             return jsonify({"error": f"{sheet_name} 시트를 불러올 수 없습니다."}), 500
 
-    # ✅ 선택 방식 저장 (자동 파싱 실패 시)
+    # 수동 선택 방식
     sheet_map = {
         "1": ["상담일지"],
         "2": ["개인메모"],
@@ -548,7 +598,6 @@ def add_counseling():
     if not selected_sheets:
         return jsonify({"message": "저장이 취소되었습니다."}), 200
 
-    # 회원명이 없는 경우 추정
     try:
         payload = text.split("상담일지 저장:")[1].strip()
         name = payload.split()[0]
@@ -557,18 +606,26 @@ def add_counseling():
         name = ""
         content = text
 
+    counsel_type = extract_counsel_type(text)
+    tags = extract_tags(text)
+
     for sheet in selected_sheets:
         ws = get_worksheet(sheet)
         if not ws:
             return jsonify({"error": f"{sheet} 시트를 불러올 수 없습니다."}), 500
-        ws.append_row([now, name, content, sheet])
+        ws.append_row([now, name, counsel_type, content, tags, sheet])
 
     return jsonify({
         "message": f"{', '.join(selected_sheets)} 시트에 저장되었습니다.",
         "회원명": name,
+        "상담형태": counsel_type,
+        "태그": tags,
         "내용": content
     }), 200
-    
+
+
+
+
 
 
 
