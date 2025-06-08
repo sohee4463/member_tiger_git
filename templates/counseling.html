@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>상담일지 등록</title>
+</head>
+<body>
+  <h2>상담일지 입력</h2>
+  <textarea id="memo" rows="5" cols="40" placeholder="예: 상담일지 저장: 홍길동 오늘 오전 상담 진행..."></textarea><br>
+  <select id="mode">
+    <option value="1">공유</option>
+    <option value="2">개인</option>
+  </select><br>
+  <button id="saveBtn">저장</button>
+
+  <script>
+    document.getElementById('saveBtn').addEventListener('click', () => {
+      const memo = document.getElementById('memo').value.trim();
+      const mode = document.getElementById('mode').value;
+
+      setTimeout(() => {
+        if (!memo) {
+          alert("상담 내용을 입력해주세요.");
+          return;
+        }
+
+        fetch("/add_counseling", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            요청문: memo,
+            mode: mode,
+            allow_unregistered: true
+          })
+        })
+        .then(res => res.json())
+        .then(data => {
+          alert(data.message || "저장 완료");
+        })
+        .catch(err => {
+          alert("오류 발생: " + err);
+        });
+      }, 200);
+    });
+  </script>
+</body>
+</html>

@@ -581,6 +581,17 @@ def add_counseling():
     counsel_type = extract_counsel_type(text)
     tags = extract_tags(text)
 
+
+
+    # ✅ 이름 누락 시 확인 요청
+    if not name:
+        return jsonify({
+            "message": "누구 이름으로 저장할까요? 회원명을 입력해 주세요.",
+            "requires_name": True
+        }), 200
+
+
+
     # ✅ 중복 저장에 대한 사용자 응답 처리
     if confirm == "1":
         return jsonify({
@@ -696,7 +707,7 @@ def save_memo():
     save_to_sheet(name, memo)
     return jsonify({"message": f"{name}님 이름으로 메모가 저장되었습니다."})
 
-    
+
 
 
 
