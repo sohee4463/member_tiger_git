@@ -532,6 +532,7 @@ def add_counseling():
     data = request.get_json()
     text = data.get("요청문", "").strip()
     selection = data.get("선택번호") or data.get("mode")
+    confirm = data.get("confirm")  # 중복일 경우 사용자가 선택한 응답값
 
     if not text:
         return jsonify({"error": "요청문이 비어 있습니다."}), 400
@@ -562,6 +563,13 @@ def add_counseling():
         found = [kw for kw in keywords if kw in text]
         return ", ".join(found)
 
+    def check_duplicate(ws, name, content):
+        records = ws.get_all_values()
+        for row in records[1:]:
+            if len(row) >= 4 and row[1] == name and row[3] == content:
+                return True
+        return False
+
     sheet_map = {
         "1": ["상담일지"],
         "2": ["개인메모"],
@@ -570,32 +578,42 @@ def add_counseling():
         "5": []
     }
 
-    # ✅ 1. 수동 저장 우선 처리
+    # ✅ 이름 및 내용 추출
+    try:
+        name = text.split()[0]
+        content = text.replace(name, "", 1).strip()
+    except:
+        name = ""
+        content = text
+
+    counsel_type = extract_counsel_type(text)
+    tags = extract_tags(text)
+
+    # ✅ 1. 수동 저장 우선
     if selection in sheet_map:
         selected_sheets = sheet_map[selection]
         if not selected_sheets:
             return jsonify({"message": "저장이 취소되었습니다.", "mode": "취소"}), 200
 
-        try:
-            name = text.split()[0]
-            content = text.replace(name, "", 1).strip()
-        except:
-            name = ""
-            content = text
-
-        counsel_type = extract_counsel_type(text)
-        tags = extract_tags(text)
-
-        # 시트 객체 미리 불러오기
-        sheet_objs = {}
         for sheet in selected_sheets:
             ws = get_worksheet(sheet)
             if not ws:
                 return jsonify({"error": f"{sheet} 시트를 불러올 수 없습니다."}), 500
-            sheet_objs[sheet] = ws
 
-        # ✅ 1행 제목 아래(2행)에 항상 삽입
-        for sheet, ws in sheet_objs.items():
+            if not confirm and check_duplicate(ws, name, content):
+                return jsonify({
+                    "message": f"⚠️ '{sheet}' 시트에 동일한 기록이 이미 있습니다.\n다시 저장하시겠습니까?\n1. 저장\n2. 취소",
+                    "duplicate": True,
+                    "name": name,
+                    "content": content,
+                    "mode": selection,
+                    "sheet": sheet
+                }), 200
+
+            if confirm == "2":
+                return jsonify({"message": "중복 저장이 취소되었습니다.", "mode": "취소"}), 200
+
+            # ✅ 실제 저장 (2행 삽입)
             ws.insert_row([now, name, counsel_type, content, tags, sheet], 2)
 
         return jsonify({
@@ -615,23 +633,40 @@ def add_counseling():
 
         if sheet_name:
             ws = get_worksheet(sheet_name)
-            if ws:
-                ws.insert_row([now, name, counsel_type, content, tags, sheet_name], 2)
+            if not ws:
+                return jsonify({"error": f"{sheet_name} 시트를 불러올 수 없습니다."}), 500
+
+            if not confirm and check_duplicate(ws, name, content):
                 return jsonify({
-                    "message": f"자동으로 '{sheet_name}' 시트에 저장되었습니다.",
-                    "회원명": name,
-                    "상담형태": counsel_type,
-                    "태그": tags,
-                    "내용": content,
-                    "mode": sheet_name
+                    "message": f"⚠️ '{sheet_name}' 시트에 동일한 기록이 이미 있습니다.\n다시 저장하시겠습니까?\n1. 저장\n2. 취소",
+                    "duplicate": True,
+                    "name": name,
+                    "content": content,
+                    "mode": sheet_name,
+                    "sheet": sheet_name
                 }), 200
 
-    # ✅ 3. 자동저장 조건 없음 + 수동 선택도 없음
+            if confirm == "2":
+                return jsonify({"message": "중복 저장이 취소되었습니다.", "mode": "취소"}), 200
+
+            ws.insert_row([now, name, counsel_type, content, tags, sheet_name], 2)
+
+            return jsonify({
+                "message": f"자동으로 '{sheet_name}' 시트에 저장되었습니다.",
+                "회원명": name,
+                "상담형태": counsel_type,
+                "태그": tags,
+                "내용": content,
+                "mode": sheet_name
+            }), 200
+
+    # ✅ 3. 자동저장 조건 없음 + 선택 없음
     return jsonify({
         "message": "자동 저장 기준에 부합하지 않아 수동 저장이 필요합니다.\n"
                    "다음 중 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소",
         "mode": None
     }), 200
+
 
 
 
