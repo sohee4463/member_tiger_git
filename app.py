@@ -587,7 +587,7 @@ def add_counseling():
     counsel_type = extract_counsel_type(text)
     tags = extract_tags(text)
 
-    # ✅ confirm 처리: 1 → 다시 시트 선택 유도
+    # ✅ 중복 저장에 대한 사용자 응답 처리
     if confirm == "1":
         return jsonify({
             "message": "저장할 시트를 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소",
@@ -598,7 +598,16 @@ def add_counseling():
     if confirm == "2":
         return jsonify({"message": "중복 저장이 취소되었습니다.", "mode": "취소"}), 200
 
-    # ✅ 수동 저장 흐름
+    # ✅ "수동"이라는 단어가 있으면 자동저장 무시 → 수동으로
+    if "수동" in text:
+        return jsonify({
+            "message": "‘수동’이라는 단어가 포함되어 수동 저장이 필요합니다.\n"
+                       "다음 중 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소",
+            "mode": None,
+            "forced_manual": True
+        }), 200
+
+    # ✅ 수동 저장 (선택)
     if selection in sheet_map:
         selected_sheets = sheet_map[selection]
         if not selected_sheets:
@@ -630,7 +639,7 @@ def add_counseling():
             "mode": ", ".join(selected_sheets)
         }), 200
 
-    # ✅ 자동 저장
+    # ✅ 자동 저장 조건 충족
     if any(kw in text for kw in ["상담일지", "개인메모", "활동일지"]):
         sheet_name, name, content = extract_fields(text)
         counsel_type = extract_counsel_type(text)
@@ -662,12 +671,13 @@ def add_counseling():
                 "mode": sheet_name
             }), 200
 
-    # ✅ 자동저장 조건 불충족 시
+    # ✅ 자동 저장 조건 불충족 시 → 수동 저장 요청
     return jsonify({
         "message": "자동 저장 기준에 부합하지 않아 수동 저장이 필요합니다.\n"
                    "다음 중 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소",
         "mode": None
     }), 200
+
 
 
 
