@@ -538,6 +538,7 @@ def add_counseling():
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    # 텍스트에서 시트, 이름, 내용 추출
     def extract_fields(text):
         pattern = r"(상담일지|개인메모|활동일지)\s*(저장|기록|등록)\s*([가-힣]{3})\s*(.*)"
         match = re.search(pattern, text)
@@ -545,6 +546,7 @@ def add_counseling():
             return match.group(1), match.group(3), match.group(4).strip()
         return None, "", text
 
+    # 상담형태 자동 추출
     def extract_counsel_type(text):
         if any(kw in text for kw in ["전화", "통화"]):
             return "전화상담"
@@ -557,11 +559,13 @@ def add_counseling():
         else:
             return "기타"
 
+    # 태그 자동 추출
     def extract_tags(text):
         keywords = ["불만", "요청", "재방문", "취소", "환불", "일정", "만족", "지연", "지급", "변경", "구매"]
         found = [kw for kw in keywords if kw in text]
         return ", ".join(found)
 
+    # 자동 파싱 시도
     sheet_name, name, content = extract_fields(text)
     counsel_type = extract_counsel_type(text)
     tags = extract_tags(text)
@@ -575,12 +579,13 @@ def add_counseling():
                 "회원명": name,
                 "상담형태": counsel_type,
                 "태그": tags,
-                "내용": content
+                "내용": content,
+                "mode": sheet_name
             }), 200
         else:
             return jsonify({"error": f"{sheet_name} 시트를 불러올 수 없습니다."}), 500
 
-    # 수동 선택 방식
+    # 수동 저장 방식 처리
     sheet_map = {
         "1": ["상담일지"],
         "2": ["개인메모"],
@@ -598,6 +603,7 @@ def add_counseling():
     if not selected_sheets:
         return jsonify({"message": "저장이 취소되었습니다."}), 200
 
+    # 수동 입력 시 회원명 추정
     try:
         payload = text.split("상담일지 저장:")[1].strip()
         name = payload.split()[0]
@@ -620,8 +626,11 @@ def add_counseling():
         "회원명": name,
         "상담형태": counsel_type,
         "태그": tags,
-        "내용": content
+        "내용": content,
+        "mode": ", ".join(selected_sheets)
     }), 200
+
+
 
 
 
