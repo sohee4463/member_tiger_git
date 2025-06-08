@@ -499,23 +499,24 @@ def extract_member_and_content(text):
 def add_counseling():
     data = request.get_json()
     text = data.get("요청문", "").strip()
-    selection = data.get("선택번호", "1")
+    selection = data.get("선택번호", "1")  # 사용자가 선택한 번호 (1~5)
 
     if not text:
         return jsonify({"error": "요청문이 비어 있습니다."}), 400
 
+    # 현재 시간
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # 회원명과 내용 분리
+    # 회원명(name)과 상담내용(content) 분리
     try:
-        name_split = text.split("상담일지 저장:")[1].strip()
-        name = name_split.split()[0]
-        content = name_split.replace(name, "", 1).strip()
+        payload = text.split("상담일지 저장:")[1].strip()
+        name = payload.split()[0]
+        content = payload.replace(name, "", 1).strip()
     except:
         name = ""
         content = text
 
-    # 시트 분기 처리
+    # 선택번호 → 저장 시트 매핑
     sheet_map = {
         "1": ["상담일지"],
         "2": ["개인메모"],
@@ -528,18 +529,19 @@ def add_counseling():
     if not selected_sheets:
         return jsonify({"message": "저장이 취소되었습니다."}), 200
 
+    # 각 시트에 저장
     for sheet_name in selected_sheets:
         ws = get_worksheet(sheet_name)
-        if ws:
-            ws.append_row([now, name, content, sheet_name])
-        else:
+        if not ws:
             return jsonify({"error": f"{sheet_name} 시트를 불러올 수 없습니다."}), 500
+        ws.append_row([now, name, content, sheet_name])
 
     return jsonify({
         "message": f"{', '.join(selected_sheets)} 시트에 저장되었습니다.",
-        "name": name,
-        "content": content
+        "회원명": name,
+        "내용": content
     }), 200
+    
 
 
 
