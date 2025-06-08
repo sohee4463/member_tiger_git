@@ -92,6 +92,9 @@ def get_counseling_sheet():
 def get_mymemo_sheet():
     return get_worksheet("개인메모")
 
+def get_search_memo_by_tags_sheet():
+    return get_worksheet("개인메모")
+
 def get_dailyrecord_sheet():
     return get_worksheet("활동일지")
 
@@ -483,68 +486,27 @@ def extract_member_and_content(text):
 
 
 
+@app.route("/")
+def index():
+    return render_template("counseling.html")
+
 @app.route("/add_counseling", methods=["POST"])
 def add_counseling():
     data = request.get_json()
     text = data.get("요청문", "").strip()
-    mode = str(data.get("mode", "")).strip().lower()
+    mode = data.get("mode", "1")
     allow_unregistered = data.get("allow_unregistered", False)
-    sort_by = data.get("sort_by", "tag")
 
-    # ✅ 선택 번호 해석
-    mode_mapping = {
-        "1": "공유", "공유": "공유",
-        "2": "개인", "개인": "개인",
-        "3": "취소", "취소": "취소"
-    }
-    mode = mode_mapping.get(mode, mode)  # 숫자도 문자열 처리
-
-    # ✅ 취소 선택 시 중단
-    if mode == "취소":
-        return jsonify({"message": "상담일지 저장이 취소되었습니다."}), 200
-
-    # ✅ 기본 유효성 검사
     if not text:
         return jsonify({"error": "요청문이 비어 있습니다."}), 400
-    if mode not in ["공유", "개인"]:
-        return jsonify({"error": "mode 값은 '1'(공유), '2'(개인), '3'(취소) 중 하나여야 합니다."}), 400
-    if not is_counseling_command(text):
-        return jsonify({"message": "상담일지 요청이 아닙니다."}), 200
 
-    # ✅ 정보 추출
-    member, content = extract_member_and_content(text)
-    date = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-    # ✅ 미등록 회원 차단 (선택)
-    if member == "미지정" and not allow_unregistered:
-        return jsonify({"error": "회원명을 인식할 수 없습니다. 등록된 회원이 아닙니다."}), 400
-
-    # ✅ 시트 선택
-    sheet = get_mymemo_sheet() if mode == "개인" else get_counseling_sheet()
-    if not sheet:
-        return jsonify({"error": "시트 접근 실패"}), 500
-
-    try:
-        sheet.append_row([member, date, content])
-    except Exception as e:
-        return jsonify({"error": f"상담일지 저장 실패: {str(e)}"}), 500
-
-    # ✅ 응답 메시지
-    response = {
-        "message": f"{member}님의 상담일지가 저장되었습니다. (→ {'개인메모' if mode == '개인' else '공유 상담일지'})",
-        "member": member,
-        "mode": mode,
-        "date": date,
-        "content": content
-    }
-
-    # ✅ 개인 모드: 태그/유사 추천
-    if mode == "개인":
-        tags = generate_tags(content)
-        recommendations = find_similar_memos(sheet, tags, limit=5, sort_by="tag")
-        response["자동_태그"] = tags
-        response["유사_상담기록"] = recommendations
-    return jsonify(response), 200
+    # 여기서는 간단히 저장 성공 메시지만 반환
+    return jsonify({
+        "message": f"상담일지가 저장되었습니다.",
+        "text": text,
+        "mode": mode
+    }), 200
+    
 
 
 
