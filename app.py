@@ -485,28 +485,34 @@ def extract_member_and_content(text):
 
 
 
-
-@app.route("/")
-def index():
-    return render_template("counseling.html")
-
 @app.route("/add_counseling", methods=["POST"])
 def add_counseling():
     data = request.get_json()
     text = data.get("요청문", "").strip()
     mode = data.get("mode", "1")
-    allow_unregistered = data.get("allow_unregistered", False)
 
     if not text:
         return jsonify({"error": "요청문이 비어 있습니다."}), 400
 
-    # 여기서는 간단히 저장 성공 메시지만 반환
-    return jsonify({
-        "message": f"상담일지가 저장되었습니다.",
-        "text": text,
-        "mode": mode
-    }), 200
-    
+    try:
+        # 문서 및 시트 선택
+        sheet = client.open("members_list_main")
+        worksheet_name = "개인메모" if mode == "개인" else "상담일지"
+        worksheet = sheet.worksheet(worksheet_name)
+
+        # 현재 시간 포함해서 한 줄 추가
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        worksheet.append_row([now, text, mode])
+
+        return jsonify({
+            "message": "상담일지가 저장되었습니다.",
+            "text": text,
+            "mode": mode
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 
 
