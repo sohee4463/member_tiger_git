@@ -678,6 +678,27 @@ def add_counseling():
 
 
 
+@app.route("/save_memo", methods=["POST"])
+def save_memo():
+    data = request.json
+    name = data.get("회원명", "").strip()
+    memo = data.get("요청문", "").strip()
+
+    if not memo:
+        return jsonify({"message": "메모 내용이 없습니다."}), 400
+
+    if not name:
+        return jsonify({
+            "message": "누구 이름으로 저장할까요? 회원명을 입력해 주세요.",
+            "requires_name": True
+        }), 200
+
+    save_to_sheet(name, memo)
+    return jsonify({"message": f"{name}님 이름으로 메모가 저장되었습니다."})
+
+    
+
+
 
 
 
