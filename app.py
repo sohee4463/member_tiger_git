@@ -3,6 +3,7 @@ import json
 import re
 import pandas as pd
 import gspread
+import traceback 
 from flask import Flask, request, jsonify
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
@@ -14,9 +15,16 @@ from collections import Counter
 
 
 
-# 환경 변수 로드
+
+
+
+
+
+# ✅ 환경 변수 로드
 load_dotenv()
 app = Flask(__name__)
+if not os.getenv("GOOGLE_SHEET_KEY"):
+    raise EnvironmentError("환경변수 GOOGLE_SHEET_KEY가 설정되지 않았습니다.")
 
 
 
@@ -61,31 +69,13 @@ def parse_request(text):
 
 
 
-
-# ✅ Google Sheets 연동 함수
-def get_worksheet(sheet_name):
-    try:
-        keyfile_dict = json.loads(os.getenv("GOOGLE_SHEET_KEY"))
-        keyfile_dict["private_key"] = keyfile_dict["private_key"].replace("\\n", "\n")
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, scope)
-        client = gspread.authorize(creds)
-        sheet = client.open("members_list_main")
-        return sheet.worksheet(sheet_name)
-    except gspread.exceptions.WorksheetNotFound:
-        traceback.print_exc()
-        raise Exception(f"[ERROR] 시트 '{sheet_name}'를 찾을 수 없습니다.")
-    except Exception as e:
-        traceback.print_exc()
-        raise Exception(f"[ERROR] get_worksheet 오류: {str(e)}")
-
-
-
-
 @app.route("/")
 def home():
     return "Flask 서버가 실행 중입니다."
 
+
+def get_db_sheet():
+    return get_worksheet("DB")
 
 def get_member_sheet():
     return get_worksheet("DB")
@@ -107,6 +97,44 @@ def get_dailyrecord_sheet():
 
 def get_image_sheet():
     return get_worksheet("사진저장")
+
+
+
+
+
+# ✅ Google Sheets 연동 함수
+def get_worksheet(sheet_name):
+    try:
+        keyfile_dict = json.loads(os.getenv("GOOGLE_SHEET_KEY"))
+        keyfile_dict["private_key"] = keyfile_dict["private_key"].replace("\\n", "\n")
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, scope)
+        client = gspread.authorize(creds)
+        sheet = client.open("members_list_main")
+        return sheet.worksheet(sheet_name)
+    except gspread.exceptions.WorksheetNotFound:
+        traceback.print_exc()
+        raise Exception(f"[ERROR] 시트 '{sheet_name}'를 찾을 수 없습니다.")
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"[ERROR] get_worksheet 오류: {str(e)}")
+
+
+def parse_request_and_update(data: str, member: dict) -> dict:
+    for keyword in field_map:
+        match = re.search(rf"{keyword}\s*([:：]?\s*)([\w\-@.]+)", data)
+        if match:
+            value_raw = match.group(2)
+            value = re.sub(r"(으로|로|에)$", "", value_raw)
+            field = field_map[keyword]
+            member[field] = value
+            member[f"{field}_기록"] = f"(기록됨: {value})"
+            break
+    return member
+
+
+
+
 
 
 
@@ -296,6 +324,63 @@ def delete_member():
 
 
 
+# 예시 데이터베이스 (실제 환경에서는 DB 연동)
+mock_db = {
+    "홍길동": {
+        "회원명": "홍길동",
+        "회원번호": "12345678",
+        "휴대폰번호": "010-1234-5678",
+        "주소": "서울시 강남구"
+    }
+}
+
+# 동의어 포함 field_map
+field_map = {
+    "회원명": "회원명", "이름": "회원명", "성함": "회원명",
+    "회원번호": "회원번호", "번호": "회원번호", "아이디": "회원번호",
+    "생년월일": "생년월일", "생일": "생년월일", "출생일": "생년월일",
+    "성별": "연령/성별", "연령": "연령/성별", "나이": "연령/성별",
+    "휴대폰번호": "휴대폰번호", "전화번호": "휴대폰번호", "연락처": "휴대폰번호", "폰": "휴대폰번호",
+    "주소": "주소", "거주지": "주소", "사는곳": "주소",
+    "직업": "직업", "일": "직업", "하는일": "직업",
+    "가입일자": "가입일자", "입회일": "가입일자", "등록일": "가입일자",
+    "가족관계": "가족관계", "가족": "가족관계",
+    "추천인": "소개한분", "소개자": "소개한분",
+    "계보도": "계보도",
+    "후원인": "카드주인", "카드주인": "카드주인", "스폰서": "카드주인",
+    "카드사": "카드사", "카드번호": "카드번호", "카드생년월일": "카드생년월일",
+    "리더": "리더님", "리더님": "리더님", "멘토": "리더님",
+    "비밀번호": "비번", "비번": "비번", "비밀번호힌트": "비밀번호힌트", "힌트": "비밀번호힌트",
+    "시스템코드": "코드", "코드": "코드", "시스템": "비즈니스시스템",
+    "콘텐츠": "콘텐츠", "통신사": "통신사", "유효기간": "유효기간", "수신동의": "수신동의",
+    "메모": "메모", "비고": "메모", "노트": "메모",
+    "GLC": "GLC프로젝트", "프로젝트": "GLC프로젝트", "단계": "회원단계",
+    "분류": "분류", "니즈": "니즈", "관심": "니즈",
+    "애용제품": "애용제품", "제품": "애용제품", "주력제품": "애용제품",
+    "친밀도": "친밀도", "관계": "친밀도",
+    "근무처": "근무처", "회사": "근무처", "직장": "근무처"
+}
+
+
+
+
+
+
+
+
+
+# 다중 필드 업데이트 함수
+def parse_request_and_update_multi(data: str, member: dict) -> dict:
+    for keyword in field_map:
+        # 유연한 한글 + 숫자 + 기호 값 처리
+        pattern = rf"{keyword}\s*[:：]?\s*([^\s]+)"
+        for match in re.finditer(pattern, data):
+            value_raw = match.group(1)
+            value = re.sub(r"(으로|로|에|를|은|는)$", "", value_raw)
+            field = field_map[keyword]
+            member[field] = value
+            member[f"{field}_기록"] = f"(기록됨: {value})"
+    return member
 
 
 
@@ -306,169 +391,6 @@ def delete_member():
 
 
 
-
-
-
-
-
-
-
-
-
-
-# ✅ 제품 주문 등록
-@app.route("/add_order", methods=["POST"])
-def add_order():
-    try:
-        data = request.get_json()
-        member_name = data.get("회원명", "").strip()
-        if not member_name:
-            return jsonify({"error": "회원명을 입력해야 합니다."}), 400
-
-        sheet = get_sheet()
-        records = sheet.get_all_records()
-        member_info = next((r for r in records if r.get("회원명") == member_name), None)
-        if not member_info:
-            return jsonify({"error": f"'{member_name}' 회원을 DB에서 찾을 수 없습니다."}), 404
-
-        ss = sheet.spreadsheet
-        try:
-            order_sheet = ss.worksheet("제품주문")
-        except:
-            order_sheet = ss.add_worksheet(title="제품주문", rows="1000", cols="20")
-
-        if not order_sheet.get_all_values():
-            order_sheet.append_row(ORDER_HEADERS)
-
-        row = [
-            data.get("주문일자", ""),
-            member_name,
-            member_info.get("회원번호", ""),
-            member_info.get("휴대폰번호", ""),
-            data.get("제품명", ""),
-            float(data.get("가격", 0)),
-            float(data.get("PV", 0)),
-            data.get("결재방법", ""),
-            data.get("주문자_고객명", ""),
-            data.get("주문자_휴대폰번호", ""),
-            data.get("배송처", ""),
-            data.get("수령확인", "")
-        ]
-        order_sheet.append_row(row)
-        return jsonify({"message": "제품주문이 저장되었습니다."}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-
-# ✅ Google Sheets 연동
-def get_product_order_sheet():
-    keyfile_dict = json.loads(os.getenv("GOOGLE_SHEET_KEY"))
-    keyfile_dict["private_key"] = keyfile_dict["private_key"].replace("\\n", "\n")
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, scope)
-    client = gspread.authorize(creds)
-    return client.open("members_list_main").worksheet("제품주문")
-
-# ✅ 주문일자 처리
-def process_order_date(raw_date: str) -> str:
-    if not raw_date or raw_date.strip() == "":
-        return "=TODAY()"
-    raw_date = raw_date.strip()
-    if "오늘" in raw_date:
-        return "=TODAY()"
-    elif "어제" in raw_date:
-        return "=TODAY()-1"
-    elif "내일" in raw_date:
-        return "=TODAY()+1"
-    try:
-        datetime.strptime(raw_date, "%Y-%m-%d")
-        return raw_date
-    except ValueError:
-        return "=TODAY()"
-
-# ✅ 시트에 주문 삽입
-def insert_order_row(order_data):
-    sheet = get_product_order_sheet()
-    headers = sheet.row_values(1)
-    order_data["주문일자"] = process_order_date(order_data.get("주문일자", ""))
-    row = [order_data.get(h, "") for h in headers]
-    sheet.insert_row(row, index=2)
-
-# ✅ Flask API 라우터
-@app.route("/save_order", methods=["POST"])
-def save_order():
-    try:
-        order_data = request.get_json()
-        if not order_data:
-            return jsonify({"error": "주문 데이터를 입력해 주세요."}), 400
-        insert_order_row(order_data)
-        return jsonify({"status": "success", "message": "주문이 저장되었습니다."}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-
-
-
-# ✅ 후원수당 정리
-@app.route("/trigger_bonus_by_sheet", methods=["POST"])
-def trigger_bonus_by_sheet():
-    try:
-        data = request.get_json()
-        command = data.get("명령", "").strip()
-        sheet_url = data.get("링크", "").strip()
-        member_name = data.get("회원명", "").strip() or "미입력"
-
-        if "후원수당" not in command or not sheet_url:
-            return jsonify({"error": "후원수당 명령어가 없거나 링크가 없습니다."}), 400
-
-        keyfile_dict = json.loads(os.getenv("GOOGLE_SHEET_KEY"))
-        keyfile_dict["private_key"] = keyfile_dict["private_key"].replace("\\n", "\n")
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, scope)
-        client = gspread.authorize(creds)
-
-        ss = client.open_by_url(sheet_url)
-        sheet = ss.sheet1
-        values = sheet.get_all_values()
-
-        try:
-            start_idx = next(i for i, row in enumerate(values) if "기준일자" in row)
-        except StopIteration:
-            return jsonify({"error": "'기준일자' 항목이 포함된 행이 없습니다."}), 400
-
-        headers = values[start_idx]
-        data_rows = values[start_idx + 1:]
-        df = pd.DataFrame(data_rows, columns=headers)
-
-        df["기준일자"] = pd.to_datetime(df["기준일자"], errors="coerce")
-        df["취득점수"] = pd.to_numeric(df["취득점수"], errors="coerce")
-        df = df[df["취득점수"] > 0].dropna(subset=["기준일자"])
-        df.drop_duplicates(subset=["기준일자"], inplace=True)
-        df["횟수"] = (df["취득점수"] // 15).astype(int)
-
-        df["반기"] = df["기준일자"].apply(lambda d: f"{d.year}년 {d.month}월 {'전반기' if d.day <= 15 else '후반기'}")
-        합계 = df.groupby("반기")["횟수"].sum().to_dict()
-        마지막 = df.groupby("반기")["기준일자"].transform("max") == df["기준일자"]
-        df["달성횟수"] = ""
-        df.loc[마지막, "달성횟수"] = df.loc[마지막, "반기"].map(lambda k: f"{k} {합계[k]}회")
-        df["회원명"] = member_name
-        df.drop(columns=["반기"], inplace=True)
-
-        df_final = df[["기준일자", "합계_좌", "합계_우", "취득점수", "관리자직급", "횟수", "달성횟수", "회원명"]]
-
-        try:
-            result_sheet = ss.worksheet("후원수당_정리")
-        except gspread.exceptions.WorksheetNotFound:
-            result_sheet = ss.add_worksheet(title="후원수당_정리", rows="1000", cols="20")
-
-        result_sheet.clear()
-        result_sheet.update([df_final.columns.tolist()] + df_final.values.tolist())
-
-        return jsonify({"message": "후원수당 정리 결과가 시트에 저장되었습니다."}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 
 
@@ -525,11 +447,7 @@ def find_similar_memos(sheet, tags, limit=5, sort_by="tag"):  # ✅ sort_by 추�
         del r["날짜_obj"]
     return results[:limit]
 
-# 📄 시트 접근 함수 (실제 구현에서는 gspread 등과 연결 필요)
-def get_worksheet(name): pass
-def get_counseling_sheet(): return get_worksheet("상담일지")
-def get_mymemo_sheet(): return get_worksheet("개인메모")
-def get_db_sheet(): return get_worksheet("DB")
+
 
 # ✅ 등록된 회원명 리스트 추출
 def get_registered_names():
@@ -699,39 +617,6 @@ def search_memo_by_tags():
 
 
 
-def get_worksheet(sheet_name):
-    try:
-        import json, os
-        from oauth2client.service_account import ServiceAccountCredentials
-        import gspread
-
-        keyfile_dict = json.loads(os.getenv("GOOGLE_SHEET_KEY"))
-        keyfile_dict["private_key"] = keyfile_dict["private_key"].replace("\\n", "\n")
-        scope = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, scope)
-        client = gspread.authorize(creds)
-
-        # ✅ 연결된 스프레드시트 이름
-        sheet = client.open("members_list_main")
-
-        # ✅ 정확한 시트명 요청
-        worksheet = sheet.worksheet(sheet_name)
-        return worksheet
-
-    except gspread.exceptions.WorksheetNotFound:
-        raise Exception(f"[ERROR] 시트 '{sheet_name}'를 찾을 수 없습니다.")
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise Exception(f"[ERROR] get_worksheet 오류: {str(e)}")
-
-
-
-
 
 
 @app.route("/debug_sheets")
@@ -760,3 +645,4 @@ def debug_sheets():
 # 서버 실행
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
+
