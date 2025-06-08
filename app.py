@@ -531,7 +531,7 @@ def extract_fields(text):
 def add_counseling():
     data = request.get_json()
     text = data.get("요청문", "").strip()
-    selection = data.get("선택번호")
+    selection = data.get("선택번호") or data.get("mode")  # mode 도 허용
 
     if not text:
         return jsonify({"error": "요청문이 비어 있습니다."}), 400
@@ -562,7 +562,47 @@ def add_counseling():
         found = [kw for kw in keywords if kw in text]
         return ", ".join(found)
 
-    # ✅ 자동 저장 조건
+    sheet_map = {
+        "1": ["상담일지"],
+        "2": ["개인메모"],
+        "3": ["상담일지", "활동일지"],
+        "4": ["개인메모", "활동일지"],
+        "5": []
+    }
+
+    # ✅ 1. 수동 저장 먼저 처리
+    if selection in sheet_map:
+        selected_sheets = sheet_map[selection]
+        if not selected_sheets:
+            return jsonify({"message": "저장이 취소되었습니다.", "mode": "취소"}), 200
+
+        # 이름 추정
+        try:
+            name = text.split()[0]
+            content = text.replace(name, "", 1).strip()
+        except:
+            name = ""
+            content = text
+
+        counsel_type = extract_counsel_type(text)
+        tags = extract_tags(text)
+
+        for sheet in selected_sheets:
+            ws = get_worksheet(sheet)
+            if not ws:
+                return jsonify({"error": f"{sheet} 시트를 불러올 수 없습니다."}), 500
+            ws.append_row([now, name, counsel_type, content, tags, sheet])
+
+        return jsonify({
+            "message": f"{', '.join(selected_sheets)} 시트에 저장되었습니다.",
+            "회원명": name,
+            "상담형태": counsel_type,
+            "태그": tags,
+            "내용": content,
+            "mode": ", ".join(selected_sheets)
+        }), 200
+
+    # ✅ 2. 자동 저장 조건 검사
     if any(kw in text for kw in ["상담일지", "개인메모", "활동일지"]):
         sheet_name, name, content = extract_fields(text)
         counsel_type = extract_counsel_type(text)
@@ -581,53 +621,13 @@ def add_counseling():
                     "mode": sheet_name
                 }), 200
 
-    # ✅ 자동 저장 조건 미달 → 수동 선택 안내
-    if not selection:
-        return jsonify({
-            "message": "자동 저장 기준에 부합하지 않아 수동 저장이 필요합니다.\n"
-                       "다음 중 선택해주세요:\n"
-                       "1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소",
-            "mode": None
-        }), 200
-
-    # ✅ 수동 저장 실행
-    sheet_map = {
-        "1": ["상담일지"],
-        "2": ["개인메모"],
-        "3": ["상담일지", "활동일지"],
-        "4": ["개인메모", "활동일지"],
-        "5": []
-    }
-
-    selected_sheets = sheet_map.get(selection, [])
-    if not selected_sheets:
-        return jsonify({"message": "저장이 취소되었습니다.", "mode": "취소"}), 200
-
-    try:
-        payload = text.split("상담일지 저장:")[1].strip()
-        name = payload.split()[0]
-        content = payload.replace(name, "", 1).strip()
-    except:
-        name = ""
-        content = text
-
-    counsel_type = extract_counsel_type(text)
-    tags = extract_tags(text)
-
-    for sheet in selected_sheets:
-        ws = get_worksheet(sheet)
-        if not ws:
-            return jsonify({"error": f"{sheet} 시트를 불러올 수 없습니다."}), 500
-        ws.append_row([now, name, counsel_type, content, tags, sheet])
-
+    # ✅ 3. 선택이 없고, 자동 저장 조건도 안 맞을 경우
     return jsonify({
-        "message": f"{', '.join(selected_sheets)} 시트에 저장되었습니다.",
-        "회원명": name,
-        "상담형태": counsel_type,
-        "태그": tags,
-        "내용": content,
-        "mode": ", ".join(selected_sheets)
+        "message": "자동 저장 기준에 부합하지 않아 수동 저장이 필요합니다.\n"
+                   "다음 중 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소",
+        "mode": None
     }), 200
+
 
 
 
