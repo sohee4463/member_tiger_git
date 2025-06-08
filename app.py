@@ -3,18 +3,12 @@ import json
 import re
 import pandas as pd
 import gspread
-import traceback 
 from flask import Flask, request, jsonify
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from gspread.utils import rowcol_to_a1
 from datetime import datetime
 from collections import Counter
-
-
-
-
-
 
 
 
@@ -677,7 +671,7 @@ def add_counseling():
                    "다음 중 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소",
         "mode": None
     }), 200
-
+    
 
 
 
