@@ -147,7 +147,6 @@ def parse_request_and_update(data: str, member: dict) -> dict:
 
 
 
-client = gspread.authorize(creds)
 
 
 
@@ -496,6 +495,7 @@ def extract_member_and_content(text):
 
 
 
+# ✅ 상담일지 등록 API
 @app.route("/add_counseling", methods=["POST"])
 def add_counseling():
     data = request.get_json()
@@ -505,22 +505,20 @@ def add_counseling():
     if not text:
         return jsonify({"error": "요청문이 비어 있습니다."}), 400
 
+    sheet_name = "개인메모" if mode == "개인" else "상담일지"
+    worksheet = get_worksheet(sheet_name)
+
+    if worksheet is None:
+        return jsonify({"error": "시트를 불러올 수 없습니다."}), 500
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
-        # 문서 및 시트 선택
-        sheet = client.open("members_list_main")
-        worksheet_name = "개인메모" if mode == "개인" else "상담일지"
-        worksheet = sheet.worksheet(worksheet_name)
-
-        # 현재 시간 포함해서 한 줄 추가
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         worksheet.append_row([now, text, mode])
-
         return jsonify({
             "message": "상담일지가 저장되었습니다.",
             "text": text,
             "mode": mode
         }), 200
-
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
