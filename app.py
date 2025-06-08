@@ -105,23 +105,28 @@ def get_image_sheet():
 
 
 
+
+
 # ✅ Google Sheets 연동 함수
 def get_worksheet(sheet_name):
     try:
         keyfile_dict = json.loads(os.getenv("GOOGLE_SHEET_KEY"))
         keyfile_dict["private_key"] = keyfile_dict["private_key"].replace("\\n", "\n")
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        scope = [
+            "https://spreadsheets.google.com/feeds",
+            "https://www.googleapis.com/auth/drive"
+        ]
         creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, scope)
         client = gspread.authorize(creds)
         sheet = client.open("members_list_main")
-        client = gspread.authorize(creds)
         return sheet.worksheet(sheet_name)
-    except gspread.exceptions.WorksheetNotFound:
-        traceback.print_exc()
-        raise Exception(f"[ERROR] 시트 '{sheet_name}'를 찾을 수 없습니다.")
     except Exception as e:
-        traceback.print_exc()
-        raise Exception(f"[ERROR] get_worksheet 오류: {str(e)}")
+        print(f"[시트 접근 오류] {e}")
+        return None
+
+
+
+
 
 
 def parse_request_and_update(data: str, member: dict) -> dict:
@@ -138,6 +143,11 @@ def parse_request_and_update(data: str, member: dict) -> dict:
 
 
 
+
+
+
+
+client = gspread.authorize(creds)
 
 
 
