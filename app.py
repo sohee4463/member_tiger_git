@@ -499,34 +499,48 @@ def extract_member_and_content(text):
 def add_counseling():
     data = request.get_json()
     text = data.get("요청문", "").strip()
-    mode = data.get("mode", "1")
+    selection = data.get("선택번호", "1")
 
     if not text:
         return jsonify({"error": "요청문이 비어 있습니다."}), 400
 
-    sheet_name = "개인메모" if mode == "개인" else "상담일지"
-    worksheet = get_worksheet(sheet_name)
-    if worksheet is None:
-        return jsonify({"error": "시트를 불러올 수 없습니다."}), 500
-
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # 회원명 추출: "상담일지 저장: 홍길동 ..." 형식 기준
+    # 회원명과 내용 분리
     try:
         name_split = text.split("상담일지 저장:")[1].strip()
-        name = name_split.split()[0]  # 첫 단어를 회원명으로 간주
+        name = name_split.split()[0]
         content = name_split.replace(name, "", 1).strip()
     except:
         name = ""
         content = text
 
-    worksheet.append_row([now, name, content, mode])
-    
+    # 시트 분기 처리
+    sheet_map = {
+        "1": ["상담일지"],
+        "2": ["개인메모"],
+        "3": ["상담일지", "활동일지"],
+        "4": ["개인메모", "활동일지"],
+        "5": []  # 취소
+    }
+
+    selected_sheets = sheet_map.get(selection, [])
+    if not selected_sheets:
+        return jsonify({"message": "저장이 취소되었습니다."}), 200
+
+    for sheet_name in selected_sheets:
+        ws = get_worksheet(sheet_name)
+        if ws:
+            ws.append_row([now, name, content, sheet_name])
+        else:
+            return jsonify({"error": f"{sheet_name} 시트를 불러올 수 없습니다."}), 500
+
     return jsonify({
-        "message": "상담일지가 저장되었습니다.",
-        "text": text,
-        "mode": mode
+        "message": f"{', '.join(selected_sheets)} 시트에 저장되었습니다.",
+        "name": name,
+        "content": content
     }), 200
+
 
 
 
