@@ -495,7 +495,6 @@ def extract_member_and_content(text):
 
 
 
-# ✅ 상담일지 등록 API
 @app.route("/add_counseling", methods=["POST"])
 def add_counseling():
     data = request.get_json()
@@ -507,20 +506,28 @@ def add_counseling():
 
     sheet_name = "개인메모" if mode == "개인" else "상담일지"
     worksheet = get_worksheet(sheet_name)
-
     if worksheet is None:
         return jsonify({"error": "시트를 불러올 수 없습니다."}), 500
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 회원명 추출: "상담일지 저장: 홍길동 ..." 형식 기준
     try:
-        worksheet.append_row([now, text, mode])
-        return jsonify({
-            "message": "상담일지가 저장되었습니다.",
-            "text": text,
-            "mode": mode
-        }), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        name_split = text.split("상담일지 저장:")[1].strip()
+        name = name_split.split()[0]  # 첫 단어를 회원명으로 간주
+        content = name_split.replace(name, "", 1).strip()
+    except:
+        name = ""
+        content = text
+
+    worksheet.append_row([now, name, content, mode])
+    
+    return jsonify({
+        "message": "상담일지가 저장되었습니다.",
+        "text": text,
+        "mode": mode
+    }), 200
+
 
 
 
