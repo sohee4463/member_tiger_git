@@ -593,6 +593,16 @@ def add_counseling():
 
 
     # ✅ 중복 저장에 대한 사용자 응답 처리
+    # ✅ "직접" 또는 "직접입력"이라는 단어가 있으면 무조건 수동 선택 유도
+    if "직접" in text or "직접입력" in text:
+        return jsonify({
+            "message": "‘직접입력’이라는 단어가 포함되어 수동 저장이 필요합니다.\n"
+                       "다음 중 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소",
+            "mode": None,
+            "forced_manual": True
+        }), 200
+
+
     if confirm == "1":
         return jsonify({
             "message": "저장할 시트를 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소",
@@ -602,17 +612,6 @@ def add_counseling():
 
     if confirm == "2":
         return jsonify({"message": "중복 저장이 취소되었습니다.", "mode": "취소"}), 200
-
-
-
-        # ✅ "직접" 또는 "직접입력"이라는 단어가 있으면 무조건 수동 선택 유도
-    if "직접" in text or "직접입력" in text:
-        return jsonify({
-            "message": "‘직접입력’이라는 단어가 포함되어 수동 저장이 필요합니다.\n"
-                       "다음 중 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소",
-            "mode": None,
-            "forced_manual": True
-        }), 200
 
 
 
