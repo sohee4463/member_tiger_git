@@ -558,7 +558,7 @@ def add_counseling():
             return "기타"
 
     def extract_tags(text):
-        keywords = ["불만", "요청", "재방문", "취소", "환불", "일정", "만족", "지연", "지급", "변경", "구매"]
+        keywords = ["불만", "요청", "재방문", "취소", "환불", "일정", "만족", "지연", "지급", "변경", "구매", "안내", "완료"]
         found = [kw for kw in keywords if kw in text]
         return ", ".join(found)
 
@@ -586,7 +586,7 @@ def add_counseling():
         counsel_type = extract_counsel_type(text)
         tags = extract_tags(text)
 
-        # ✅ 시트 한 번만 조회
+        # 시트 객체 미리 불러오기
         sheet_objs = {}
         for sheet in selected_sheets:
             ws = get_worksheet(sheet)
@@ -594,8 +594,9 @@ def add_counseling():
                 return jsonify({"error": f"{sheet} 시트를 불러올 수 없습니다."}), 500
             sheet_objs[sheet] = ws
 
+        # ✅ 1행 제목 아래(2행)에 항상 삽입
         for sheet, ws in sheet_objs.items():
-            ws.append_row([now, name, counsel_type, content, tags, sheet])
+            ws.insert_row([now, name, counsel_type, content, tags, sheet], 2)
 
         return jsonify({
             "message": f"{', '.join(selected_sheets)} 시트에 저장되었습니다.",
@@ -606,7 +607,7 @@ def add_counseling():
             "mode": ", ".join(selected_sheets)
         }), 200
 
-    # ✅ 2. 자동 저장 조건
+    # ✅ 2. 자동 저장
     if any(kw in text for kw in ["상담일지", "개인메모", "활동일지"]):
         sheet_name, name, content = extract_fields(text)
         counsel_type = extract_counsel_type(text)
@@ -615,7 +616,7 @@ def add_counseling():
         if sheet_name:
             ws = get_worksheet(sheet_name)
             if ws:
-                ws.append_row([now, name, counsel_type, content, tags, sheet_name])
+                ws.insert_row([now, name, counsel_type, content, tags, sheet_name], 2)
                 return jsonify({
                     "message": f"자동으로 '{sheet_name}' 시트에 저장되었습니다.",
                     "회원명": name,
@@ -625,12 +626,13 @@ def add_counseling():
                     "mode": sheet_name
                 }), 200
 
-    # ✅ 3. 자동 저장 불가 & 수동 선택 없음
+    # ✅ 3. 자동저장 조건 없음 + 수동 선택도 없음
     return jsonify({
         "message": "자동 저장 기준에 부합하지 않아 수동 저장이 필요합니다.\n"
                    "다음 중 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소",
         "mode": None
     }), 200
+
 
 
 
