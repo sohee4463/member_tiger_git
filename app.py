@@ -603,6 +603,19 @@ def add_counseling():
     if confirm == "2":
         return jsonify({"message": "중복 저장이 취소되었습니다.", "mode": "취소"}), 200
 
+
+
+        # ✅ "직접" 또는 "직접입력"이라는 단어가 있으면 무조건 수동 선택 유도
+    if "직접" in text or "직접입력" in text:
+        return jsonify({
+            "message": "‘직접입력’이라는 단어가 포함되어 수동 저장이 필요합니다.\n"
+                       "다음 중 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소",
+            "mode": None,
+            "forced_manual": True
+        }), 200
+
+
+
     # ✅ "수동"이라는 단어가 있으면 자동저장 무시 → 수동으로
     if "수동" in text:
         return jsonify({
@@ -611,6 +624,10 @@ def add_counseling():
             "mode": None,
             "forced_manual": True
         }), 200
+
+
+
+
 
     # ✅ 수동 저장 (선택)
     if selection in sheet_map:
