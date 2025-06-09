@@ -453,6 +453,12 @@ def update_entry(ws, target_row_index, updated_content):
 def delete_entry(ws, target_row_index):
     ws.delete_rows(target_row_index)
 
+
+
+
+
+
+
 # === API ===
 @app.route("/add_counseling", methods=["POST"])
 def add_counseling():
@@ -469,11 +475,18 @@ def add_counseling():
         sheet_name, name, _ = match.groups()
         name = name if name else "본인"
         content = text.replace(match.group(0), "").strip()
+
+        # 🔧 "본인" 자동 적용 시, 내용 첫 단어로 남아 있으면 제거
+        if name == "본인" and content.startswith("본인"):
+            content = content[len("본인"):].strip()
+
         counsel_type = detect_counsel_type(text)
         now = datetime.now(pytz.timezone("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S")
         ws = get_worksheet(sheet_name)
+
         if check_duplicate(ws, name, content):
-            return jsonify({"message": "\u26a0\ufe0f 같은 내용이 이미 저장이 되어 있습니다."}), 200
+            return jsonify({"message": "⚠️ 같은 내용이 이미 저장이 되어 있습니다."}), 200
+
         ws.insert_row([now, name, counsel_type, content, sheet_name], 2)
         return jsonify({"message": f"자동으로 '{sheet_name}' 시트에 저장되었습니다.", "회원명": name, "내용": content, "상담형태": counsel_type, "mode": sheet_name}), 200
 
