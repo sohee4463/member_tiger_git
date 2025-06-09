@@ -391,67 +391,13 @@ def parse_request_and_update_multi(data: str, member: dict) -> dict:
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# === 유틸리티 함수 ===
 def extract_nouns(text):
-    return re.findall(r'[\uAC00-\uD7A3]{2,}', text)
+    return re.findall(r'[가-힣]{2,}', text)
 
-def check_duplicate(ws, name, content):
-    rows = ws.get_all_values()
-    for row in rows[1:]:
-        if len(row) >= 4 and row[1] == name and row[3] == content:
-            return True
-    return False
-
-def detect_counsel_type(text):
-    if any(kw in text for kw in ["전화", "통화"]):
-        return "전화상담"
-    elif any(kw in text for kw in ["내방", "방문", "사무실"]):
-        return "내방상담"
-    elif any(kw in text for kw in ["문자", "카톡", "톡", "메시지", "메신저"]):
-        return "문자상담"
-    elif any(kw in text for kw in ["외근", "현장", "외부"]):
-        return "외부상담"
-    else:
-        return "기타"
-
-def fetch_recent_entries(ws, name, limit=10):
-    rows = ws.get_all_values()[1:]  # 헤더 제외
-    entries = [row for row in rows if len(row) >= 4 and row[1] == name]
-    return entries[:limit]
-
-def update_entry(ws, target_row_index, updated_content):
-    ws.update(f"D{target_row_index}", [[updated_content]])
-
-def delete_entry(ws, target_row_index):
-    ws.delete_rows(target_row_index)
+def generate_tags(text):
+    nouns = extract_nouns(text)
+    top_keywords = [word for word, _ in Counter(nouns).most_common(5)]
+    return top_keywords
 
 
 
@@ -459,95 +405,101 @@ def delete_entry(ws, target_row_index):
 
 
 
-# === 유틸 함수 ===
-def extract_name(text):
-    match = re.search(r"(회원\s)?([가-힣]{2,5})(님)?", text)
-    return match.group(2) if match else "본인"
 
-def extract_content(text):
-    return text.strip()
 
-def get_worksheet(sheet_name):
-    # TODO: Google Sheets 연동 함수 연결
-    pass
 
-def fetch_recent_entries(ws, name):
-    # TODO: 최근 항목 가져오기
-    return []
-
-def check_duplicate(ws, name, content):
+# ✅ 시트 저장 함수 (Google Sheets 연동 및 중복 확인)
+def save_to_sheet(sheet_name, member_name, content):
     try:
-        records = ws.get_all_values()
-        return any(name in row and content in row for row in records)
+        sheet = get_worksheet(sheet_name)
+        if sheet is None:
+            print(f"[오류] '{sheet_name}' 시트를 찾을 수 없습니다.")
+            return False
+
+        existing = sheet.get_all_values()
+        contents = [row[2] if len(row) > 2 else "" for row in existing]  # 내용은 3열 기준
+        if content in contents:
+            print(f"[중복] 이미 같은 내용이 '{sheet_name}'에 존재합니다.")
+            return False
+
+        now = datetime.now(pytz.timezone("Asia/Seoul"))
+        time_str = now.strftime("%Y-%m-%d %H:%M")
+
+        sheet.insert_row([time_str, member_name, content], index=2)
+        print(f"[저장완료] '{sheet_name}' 시트에 저장 완료")
+        return True
+
     except Exception as e:
-        print(f"[중복체크 오류] {e}")
+        print(f"[시트 저장 오류: {sheet_name}] {e}")
         return False
 
-def save_to_sheet(sheet_name, name, content):
-    ws = get_worksheet(sheet_name)
-    if ws is None:
-        return {"message": f"{sheet_name} 시트를 열 수 없습니다."}
-    now = datetime.now(pytz.timezone("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S")
-    if check_duplicate(ws, name, content):
-        return {"message": "⚠️ 같은 내용이 이미 저장이 되어 있습니다."}
-    ws.insert_row([now, name, content], 2)
-    return {"message": f"{sheet_name} 시트에 저장되었습니다.", "회원명": name, "내용": content}
 
-
-# === 메인 엔드포인트 ===
-@app.route("/add_counseling", methods=["POST"])
+# ✅ /add_counseling 처리 API (자연어 입력 기반 저장 + mode 분기)
+@app.route('/add_counseling', methods=['POST'])
 def add_counseling():
-    data = request.get_json()
-    text = data.get("요청문", "").strip()
-    selection = data.get("선택번호") or data.get("mode")
+    try:
+        data = request.get_json()
+        text = data.get("요청문", "")
+        mode = data.get("mode", "1")
 
-    if not text:
-        return jsonify({"error": "요청문이 비어 있습니다."}), 400
+        sheet_keywords = ["상담일지", "개인메모", "활동일지", "직접입력"]
+        action_keywords = ["저장", "기록", "입력"]
 
-    # 이름/내용 추출
-    name = extract_name(text)
-    content = extract_content(text)
+        if not any(kw in text for kw in sheet_keywords) or not any(kw in text for kw in action_keywords):
+            return jsonify({"message": "저장하려면 '상담일지', '개인메모', '활동일지', '직접입력' 중 하나와 '저장', '기록', '입력' 같은 동작어를 함께 포함해 주세요."})
 
-    # 자동 저장
-    if "상담일지" in text:
-        result = save_to_sheet("상담일지", name, content)
-        return jsonify(result)
-    elif "개인메모" in text:
-        result = save_to_sheet("개인메모", name, content)
-        return jsonify(result)
-    elif "활동일지" in text:
-        result = save_to_sheet("활동일지", name, content)
-        return jsonify(result)
+        # 정확한 회원명 추출
+        match = re.search(r'([가-힣]{2,3})\s*(상담일지|개인메모|활동일지|직접입력)', text)
+        if not match:
+            return jsonify({"message": "회원명을 인식할 수 없습니다."})
+        member_name = match.group(1)
 
-    # 수동 선택 분기
-    if "직접입력" in text:
-        return jsonify({
-            "message": "수동으로 저장합니다.\n다음 중 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소",
-            "mode": None,
-            "forced_manual": True
-        })
+        # 명령어 제거
+        for kw in sheet_keywords + action_keywords:
+            text = text.replace(f"{member_name}{kw}", "")
+            text = text.replace(f"{member_name} {kw}", "")
+            text = text.replace(kw, "")
+        text = text.strip()
 
-    if selection in {"1", "2", "3", "4"}:
-        sheet_map = {
+        # mode 값에 따라 저장 대상 시트 결정
+        mode_map = {
             "1": ["상담일지"],
             "2": ["개인메모"],
             "3": ["상담일지", "활동일지"],
-            "4": ["개인메모", "활동일지"]
+            "4": ["개인메모", "활동일지"],
+            "5": []
         }
-        results = [save_to_sheet(sheet, name, content) for sheet in sheet_map[selection]]
-        return jsonify({"message": "\n".join(r["message"] for r in results), "회원명": name, "내용": content})
+        target_sheets = mode_map.get(mode, ["상담일지", "개인메모", "활동일지"])
 
-    return jsonify({"message": "자동 저장 기준에 부합하지 않아 수동 저장이 필요합니다.\n다음 중 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소"})
+        if not target_sheets:
+            return jsonify({"message": "저장이 취소되었습니다."})
+
+        saved = False
+        for sheet in target_sheets:
+            if save_to_sheet(sheet, member_name, text):
+                saved = True
+            else:
+                return jsonify({"message": f"같은 내용이 이미 '{sheet}' 시트에 저장되어 있습니다."})
+
+        if saved:
+            return jsonify({"message": f"{member_name}님의 상담일지 저장이 완료되었습니다."})
+        else:
+            return jsonify({"message": "저장할 시트를 찾을 수 없습니다."})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    
+    
+    
+    
+    
 
 
 
 
-
-
-
-
-
-
+    
 
 
 
