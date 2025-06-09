@@ -283,7 +283,8 @@ def save_member():
         for key, value in req.items():
             if key in headers:
                 new_row[headers.index(key)] = value
-        sheet.append_row(new_row)
+   
+        sheet.insert_row(new_row, 2)
         return jsonify({"message": f"신규 회원 '{name}' 저장 완료"})
 
     except Exception as e:
