@@ -582,11 +582,13 @@ def debug_sheets():
         keyfile_dict["private_key"] = keyfile_dict["private_key"].replace("\\n", "\n")
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, scope)
+        client = gspread.authorize(creds)  # ✅ 이 줄 추가
         sheet = client.open("members_list_main")
         titles = [ws.title for ws in sheet.worksheets()]
         return jsonify({"시트목록": titles})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
 
