@@ -418,80 +418,18 @@ def parse_request_and_update_multi(data: str, member: dict) -> dict:
 
 
 
+# === 유틸리티 함수 ===
 def extract_nouns(text):
-    return re.findall(r'[가-힣]{2,}', text)
+    return re.findall(r'[\uAC00-\uD7A3]{2,}', text)
 
-def generate_tags(text):
-    nouns = extract_nouns(text)
-    top_keywords = [word for word, _ in Counter(nouns).most_common(5)]
-    return top_keywords
+def check_duplicate(ws, name, content):
+    rows = ws.get_all_values()
+    for row in rows[1:]:
+        if len(row) >= 4 and row[1] == name and row[3] == content:
+            return True
+    return False
 
-def find_similar_memos(sheet, tags, limit=5, sort_by="tag"):  # ✅ sort_by 추가됨
-    values = sheet.get_all_values()[1:]  # 헤더 제외
-    results = []
-    for row in values:
-        if len(row) < 3:
-            continue
-        member, date_str, content = row[0], row[1], row[2]
-        try:
-            parsed_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
-        except ValueError:
-            continue
-        memo_tags = extract_nouns(content)
-        similarity = len(set(tags) & set(memo_tags))
-        if similarity > 0:
-            results.append({
-                "회원명": member,
-                "날짜": date_str,
-                "내용": content,
-                "일치_태그수": similarity,
-                "날짜_obj": parsed_date
-            })
-
-    results.sort(key=lambda x: (x["일치_태그수"], x["날짜_obj"]), reverse=True)
-    for r in results:
-        del r["날짜_obj"]
-    return results[:limit]
-
-
-
-# ✅ 등록된 회원명 리스트 추출
-def get_registered_names():
-    db_values = get_db_sheet().get_all_values()
-    return [row[0] for row in db_values[1:] if row]
-
-# ✅ 상담일지 등록 명령 판단
-def is_counseling_command(text):
-    return any(k in text for k in ["상담일지", "개인메모", "활동일지"]) and any(w in text for w in ["기록", "저장", "등록"])
-
-# ✅ 회원명 및 상담내용 추출
-def extract_member_and_content(text):
-    registered_names = get_registered_names()
-    member = "미지정"
-    for name in registered_names:
-        if name in text:
-            member = name
-            break
-    content_match = re.search(r"상담내용[:：]?\s*(.*)", text)
-    if content_match:
-        content = content_match.group(1).strip()
-    else:
-        content = text.split(member, 1)[-1].strip() if member != "미지정" else text
-    if not content:
-        content = "(상담 내용 없음)"
-    return member, content
-
-
-
-
-def extract_tags(text):
-    keywords = ["불만", "요청", "재방문", "취소", "환불", "일정", "만족", "지연", "수당", "회원", "지급", "변경", "구매"]
-    found = [kw for kw in keywords if kw in text]
-    return ", ".join(found)
-
-
-
-def extract_counsel_type(text):
+def detect_counsel_type(text):
     if any(kw in text for kw in ["전화", "통화"]):
         return "전화상담"
     elif any(kw in text for kw in ["내방", "방문", "사무실"]):
@@ -503,230 +441,94 @@ def extract_counsel_type(text):
     else:
         return "기타"
 
+def fetch_recent_entries(ws, name, limit=10):
+    rows = ws.get_all_values()[1:]  # 헤더 제외
+    entries = [row for row in rows if len(row) >= 4 and row[1] == name]
+    return entries[:limit]
 
+def update_entry(ws, target_row_index, updated_content):
+    ws.update(f"D{target_row_index}", [[updated_content]])
 
-# 텍스트에서 시트명, 회원명, 내용 추출
-def extract_fields(text):
-    pattern = r"(상담일지|개인메모|활동일지)\s*(저장|기록|등록)\s*([가-힣]{3})\s*(.*)"
-    match = re.search(pattern, text)
-    if match:
-        sheet_name = match.group(1)
-        name = match.group(3)
-        content = match.group(4).strip()
-        return sheet_name, name, content
-    return None, "", text
+def delete_entry(ws, target_row_index):
+    ws.delete_rows(target_row_index)
 
-
-
-
-
-
+# === API ===
 @app.route("/add_counseling", methods=["POST"])
-
 def add_counseling():
     data = request.get_json()
     text = data.get("요청문", "").strip()
-    selection = data.get("선택번호") or data.get("mode")
     confirm = data.get("confirm")
-
-    # ✅ "직접" 또는 "직접입력"이라는 단어가 있으면 무조건 수동 선택 유도
-    if "직접" in text or "직접입력" in text:
-        return jsonify({
-            "message": "‘직접입력’이라는 단어가 포함되어 수동 저장이 필요합니다.\n"
-                       "다음 중 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소",
-            "mode": None,
-            "forced_manual": True
-        }), 200
-
-        
+    selection = data.get("선택번호") or data.get("mode")
 
     if not text:
         return jsonify({"error": "요청문이 비어 있습니다."}), 400
 
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    match = re.search(r"(상담일지|개인메모|활동일지)\s*([가-힣]{3})?\s*(저장|기록|입력)", text)
+    if match:
+        sheet_name, name, _ = match.groups()
+        name = name if name else "본인"
+        content = text.replace(match.group(0), "").strip()
+        counsel_type = detect_counsel_type(text)
+        now = datetime.now(pytz.timezone("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S")
+        ws = get_worksheet(sheet_name)
+        if check_duplicate(ws, name, content):
+            return jsonify({"message": "\u26a0\ufe0f 같은 내용이 이미 저장이 되어 있습니다."}), 200
+        ws.insert_row([now, name, counsel_type, content, sheet_name], 2)
+        return jsonify({"message": f"자동으로 '{sheet_name}' 시트에 저장되었습니다.", "회원명": name, "내용": content, "상담형태": counsel_type, "mode": sheet_name}), 200
 
-    def extract_fields(text):
-        pattern = r"(상담일지|개인메모|활동일지)\s*(저장|기록|등록)\s*([가-힣]{3})\s*(.*)"
-        match = re.search(pattern, text)
-        if match:
-            return match.group(1), match.group(3), match.group(4).strip()
-        return None, "", text
+    # 수정 요청
+    if re.search(r"(상담일지|개인메모|활동일지)\s*(\S{3})?\s*수정", text):
+        sheet_name, name = re.search(r"(상담일지|개인메모|활동일지)\s*(\S{3})?\s*수정", text).groups()
+        name = name if name else "본인"
+        ws = get_worksheet(sheet_name)
+        entries = fetch_recent_entries(ws, name)
+        return jsonify({"message": f"{sheet_name} 최근 상담내용입니다. 수정할 번호를 선택해주세요.\n" + "\n".join([f"{i+1}. {row[3]}" for i, row in enumerate(entries)]), "mode": "수정", "sheet": sheet_name, "회원명": name, "entries": entries}), 200
 
-    def extract_counsel_type(text):
-        if any(kw in text for kw in ["전화", "통화"]):
-            return "전화상담"
-        elif any(kw in text for kw in ["내방", "방문", "사무실"]):
-            return "내방상담"
-        elif any(kw in text for kw in ["문자", "카톡", "톡", "메시지", "메신저"]):
-            return "문자상담"
-        elif any(kw in text for kw in ["외근", "현장", "외부"]):
-            return "외부상담"
-        else:
-            return "기타"
+    # 삭제 요청
+    if re.search(r"(상담일지|개인메모|활동일지)\s*(\S{3})?\s*삭제", text):
+        sheet_name, name = re.search(r"(상담일지|개인메모|활동일지)\s*(\S{3})?\s*삭제", text).groups()
+        name = name if name else "본인"
+        ws = get_worksheet(sheet_name)
+        entries = fetch_recent_entries(ws, name)
+        return jsonify({"message": f"{sheet_name} 최근 상담내용입니다. 삭제할 번호를 선택해주세요.\n" + "\n".join([f"{i+1}. {row[3]}" for i, row in enumerate(entries)]), "mode": "삭제", "sheet": sheet_name, "회원명": name, "entries": entries}), 200
 
-    def extract_tags(text):
-        keywords = ["불만", "요청", "재방문", "취소", "환불", "일정", "만족", "지연", "지급", "변경", "구매", "안내", "완료"]
-        return ", ".join([kw for kw in keywords if kw in text])
+    # 직접입력 요청 시 수동 분기
+    if "직접입력" in text:
+        return jsonify({"message": "수동으로 저장합니다.\n다음 중 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소", "mode": None, "forced_manual": True}), 200
 
-    def check_duplicate(ws, name, content):
-        rows = ws.get_all_values()
-        for row in rows[1:]:
-            if len(row) >= 4 and row[1] == name and row[3] == content:
-                return True
-        return False
-
-    sheet_map = {
-        "1": ["상담일지"],
-        "2": ["개인메모"],
-        "3": ["상담일지", "활동일지"],
-        "4": ["개인메모", "활동일지"],
-        "5": []
-    }
-
+    # 일반 자동 감지 로직
     try:
         name = text.split()[0]
         content = text.replace(name, "", 1).strip()
     except:
-        name = ""
-        content = text
+        return jsonify({"message": "누구 이름으로 저장할까요? 회원명을 입력해 주세요.", "requires_name": True}), 200
 
-    counsel_type = extract_counsel_type(text)
-    tags = extract_tags(text)
+    now = datetime.now(pytz.timezone("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S")
+    counsel_type = detect_counsel_type(text)
 
+    def save(sheet_name):
+        ws = get_worksheet(sheet_name)
+        if check_duplicate(ws, name, content):
+            return jsonify({"message": "\u26a0\ufe0f 같은 내용이 이미 저장이 되어 있습니다."}), 200
+        ws.insert_row([now, name, counsel_type, content, sheet_name], 2)
+        return jsonify({"message": f"{sheet_name} 시트에 저장되었습니다.", "회원명": name, "내용": content}), 200
 
+    if "상담일지" in text:
+        return save("상담일지")
+    elif "개인메모" in text:
+        return save("개인메모")
+    elif "활동일지" in text:
+        return save("활동일지")
 
-    # ✅ 이름 누락 시 확인 요청
-    if not name:
-        return jsonify({
-            "message": "누구 이름으로 저장할까요? 회원명을 입력해 주세요.",
-            "requires_name": True
-        }), 200
+    # 수동 저장 분기
+    if selection in {"1", "2", "3", "4"}:
+        sheet_map = {"1": ["상담일지"], "2": ["개인메모"], "3": ["상담일지", "활동일지"], "4": ["개인메모", "활동일지"]}
+        results = []
+        for sheet in sheet_map[selection]:
+            results.append(save(sheet).get_json()["message"])
+        return jsonify({"message": "\n".join(results), "회원명": name, "내용": content}), 200
 
-
-
-    # ✅ 중복 저장에 대한 사용자 응답 처리
-
-
-
-    if confirm == "1":
-        return jsonify({
-            "message": "저장할 시트를 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소",
-            "mode": None,
-            "confirming_repeat": True
-        }), 200
-
-    if confirm == "2":
-        return jsonify({"message": "중복 저장이 취소되었습니다.", "mode": "취소"}), 200
-
-
-
-    # ✅ "수동"이라는 단어가 있으면 자동저장 무시 → 수동으로
-    if "수동" in text:
-        return jsonify({
-            "message": "‘수동’이라는 단어가 포함되어 수동 저장이 필요합니다.\n"
-                       "다음 중 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소",
-            "mode": None,
-            "forced_manual": True
-        }), 200
-
-
-
-
-
-    # ✅ 수동 저장 (선택)
-    if selection in sheet_map:
-        selected_sheets = sheet_map[selection]
-        if not selected_sheets:
-            return jsonify({"message": "저장이 취소되었습니다.", "mode": "취소"}), 200
-
-        for sheet in selected_sheets:
-            ws = get_worksheet(sheet)
-            if not ws:
-                return jsonify({"error": f"{sheet} 시트를 불러올 수 없습니다."}), 500
-
-            if not confirm and check_duplicate(ws, name, content):
-                return jsonify({
-                    "message": f"⚠️ '{sheet}' 시트에 동일한 기록이 이미 있습니다.\n다시 저장하시겠습니까?\n1. 저장\n2. 취소",
-                    "duplicate": True,
-                    "name": name,
-                    "content": content,
-                    "mode": selection,
-                    "sheet": sheet
-                }), 200
-
-            ws.insert_row([now, name, counsel_type, content, tags, sheet], 2)
-
-        return jsonify({
-            "message": f"{', '.join(selected_sheets)} 시트에 저장되었습니다.",
-            "회원명": name,
-            "상담형태": counsel_type,
-            "태그": tags,
-            "내용": content,
-            "mode": ", ".join(selected_sheets)
-        }), 200
-
-    # ✅ 자동 저장 조건 충족
-    if any(kw in text for kw in ["상담일지", "개인메모", "활동일지"]):
-        sheet_name, name, content = extract_fields(text)
-        counsel_type = extract_counsel_type(text)
-        tags = extract_tags(text)
-
-        if sheet_name:
-            ws = get_worksheet(sheet_name)
-            if not ws:
-                return jsonify({"error": f"{sheet_name} 시트를 불러올 수 없습니다."}), 500
-
-            if not confirm and check_duplicate(ws, name, content):
-                return jsonify({
-                    "message": f"⚠️ '{sheet_name}' 시트에 동일한 기록이 이미 있습니다.\n다시 저장하시겠습니까?\n1. 저장\n2. 취소",
-                    "duplicate": True,
-                    "name": name,
-                    "content": content,
-                    "mode": sheet_name,
-                    "sheet": sheet_name
-                }), 200
-
-            ws.insert_row([now, name, counsel_type, content, tags, sheet_name], 2)
-
-            return jsonify({
-                "message": f"자동으로 '{sheet_name}' 시트에 저장되었습니다.",
-                "회원명": name,
-                "상담형태": counsel_type,
-                "태그": tags,
-                "내용": content,
-                "mode": sheet_name
-            }), 200
-
-    # ✅ 자동 저장 조건 불충족 시 → 수동 저장 요청
-    return jsonify({
-        "message": "자동 저장 기준에 부합하지 않아 수동 저장이 필요합니다.\n"
-                   "다음 중 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소",
-        "mode": None
-    }), 200
-    
-
-
-
-
-
-
-@app.route("/save_memo", methods=["POST"])
-def save_memo():
-    data = request.json
-    name = data.get("회원명", "").strip()
-    memo = data.get("요청문", "").strip()
-
-    if not memo:
-        return jsonify({"message": "메모 내용이 없습니다."}), 400
-
-    if not name:
-        return jsonify({
-            "message": "누구 이름으로 저장할까요? 회원명을 입력해 주세요.",
-            "requires_name": True
-        }), 200
-
-    save_to_sheet(name, memo)
-    return jsonify({"message": f"{name}님 이름으로 메모가 저장되었습니다."})
+    return jsonify({"message": "자동 저장 기준에 부합하지 않아 수동 저장이 필요합니다.\n다음 중 선택해주세요:\n1. 상담일지\n2. 개인메모\n3. 상담일지+활동일지\n4. 개인메모+활동일지\n5. 취소"}), 200
 
 
 
