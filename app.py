@@ -554,6 +554,32 @@ def add_counseling():
 
 
 
+@app.route("/save_counseling", methods=["POST"])
+def save_counseling():
+    data = request.json
+    raw_text = data.get("요청문", "")
+    mode = data.get("mode", "1")
+
+    # 이름 추출
+    name_match = re.search(r"(회원\s)?([가-힣]{2,4})\s*상담일지", raw_text)
+    name = name_match.group(2) if name_match else "본인"
+
+    # 내용 추출
+    content = re.sub(r".*상담일지\s*(저장)?[:\-]?\s*", "", raw_text).strip()
+
+    # 시트에 저장 (날짜, 이름, 내용, 상담형태)
+    from datetime import datetime
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    sheet.append_row([now, name, content, "기타"])
+
+    return jsonify({
+        "message": "스프레드시트에 상담일지가 저장되었습니다.",
+        "회원명": name,
+        "내용": content
+    })
+
+
+
 
 
 
