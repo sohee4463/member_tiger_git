@@ -319,6 +319,7 @@ def delete_member():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+        
 
 
 
@@ -398,8 +399,6 @@ def generate_tags(text):
     nouns = extract_nouns(text)
     top_keywords = [word for word, _ in Counter(nouns).most_common(5)]
     return top_keywords
-
-
 
 
 
@@ -490,6 +489,7 @@ def add_counseling():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
     
     
     
