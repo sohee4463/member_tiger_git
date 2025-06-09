@@ -319,7 +319,7 @@ def delete_member():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-        
+
 
 
 
@@ -402,7 +402,37 @@ def generate_tags(text):
 
 
 
+API_URL = "https://memberslist.onrender.com/jit_plugin/add_counseling"
+HEADERS = {"Content-Type": "application/json"}
 
+def determine_mode(content: str) -> str:
+    if "상담일지" in content:
+        return "1"  # 상담일지 (공유)
+    elif "개인메모" in content:
+        return "개인"
+    elif "활동일지" in content:
+        return "3"
+    else:
+        return "1"  # 기본값
+
+@app.route('/save_note', methods=['POST'])
+def save_note():
+    data = request.json
+    요청문 = data.get("요청문", "")
+    mode = determine_mode(요청문)
+
+    payload = {
+        "요청문": 요청문,
+        "mode": mode,
+        "allow_unregistered": True
+    }
+
+    response = requests.post(API_URL, json=payload, headers=HEADERS)
+    if response.ok:
+        return jsonify({"status": "success", "message": "저장 완료"})
+    else:
+        return jsonify({"status": "error", "message": response.text})
+        
 
 
 
@@ -439,7 +469,6 @@ def add_counseling():
     try:
         data = request.get_json()
         text = data.get("요청문", "")
-        mode = data.get("mode", "1")
 
         sheet_keywords = ["상담일지", "개인메모", "활동일지", "직접입력"]
         action_keywords = ["저장", "기록", "입력"]
@@ -447,48 +476,32 @@ def add_counseling():
         if not any(kw in text for kw in sheet_keywords) or not any(kw in text for kw in action_keywords):
             return jsonify({"message": "저장하려면 '상담일지', '개인메모', '활동일지', '직접입력' 중 하나와 '저장', '기록', '입력' 같은 동작어를 함께 포함해 주세요."})
 
-        # 정확한 회원명 추출
         match = re.search(r'([가-힣]{2,3})\s*(상담일지|개인메모|활동일지|직접입력)', text)
         if not match:
             return jsonify({"message": "회원명을 인식할 수 없습니다."})
         member_name = match.group(1)
+        matched_sheet = match.group(2)
 
-        # 명령어 제거
         for kw in sheet_keywords + action_keywords:
             text = text.replace(f"{member_name}{kw}", "")
             text = text.replace(f"{member_name} {kw}", "")
             text = text.replace(kw, "")
         text = text.strip()
 
-        # mode 값에 따라 저장 대상 시트 결정
-        mode_map = {
-            "1": ["상담일지"],
-            "2": ["개인메모"],
-            "3": ["상담일지", "활동일지"],
-            "4": ["개인메모", "활동일지"],
-            "5": []
-        }
-        target_sheets = mode_map.get(mode, ["상담일지", "개인메모", "활동일지"])
+        if matched_sheet not in ["상담일지", "개인메모", "활동일지"]:
+            return jsonify({"message": "저장할 시트를 인식할 수 없습니다."})
 
-        if not target_sheets:
-            return jsonify({"message": "저장이 취소되었습니다."})
-
-        saved = False
-        for sheet in target_sheets:
-            if save_to_sheet(sheet, member_name, text):
-                saved = True
-            else:
-                return jsonify({"message": f"같은 내용이 이미 '{sheet}' 시트에 저장되어 있습니다."})
-
-        if saved:
-            return jsonify({"message": f"{member_name}님의 상담일지 저장이 완료되었습니다."})
+        if save_to_sheet(matched_sheet, member_name, text):
+            return jsonify({"message": f"{member_name}님의 {matched_sheet} 저장이 완료되었습니다."})
         else:
-            return jsonify({"message": "저장할 시트를 찾을 수 없습니다."})
+            return jsonify({"message": f"같은 내용이 이미 '{matched_sheet}' 시트에 저장되어 있습니다."})
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
 
     
     
