@@ -211,19 +211,23 @@ field_map = {
     "회원번호": "회원번호",
 }
 
+
+
+
 def parse_request_and_update(data: str, member: dict) -> tuple:
     수정된필드 = {}
 
     for keyword in field_map:
-        # 키워드 바로 뒤의 값만 추출 (공백 또는 쉼표 전까지)
-        pattern = rf"{keyword}(?:를|은|는|이|:|：)?\s*(?P<value>[^\s,]+)"
+        # 정확한 키워드 기반 값 추출 (숫자, 전화, 이메일 등만)
+        pattern = rf"{keyword}(?:를|은|는|이|:|：)?\s*(?P<value>[\d\-@.\w()]+)"
         matches = re.finditer(pattern, data)
 
         for match in matches:
             value_raw = match.group("value").strip()
 
-            # 조사 및 명령어 제거
+            # 후처리: 조사 및 명령어 제거
             value = re.sub(r"(으로|로|에)?(수정|변경|바꿔줘|바꿔|바꿈)?$", "", value_raw)
+
             field = field_map[keyword]
             수정된필드[field] = value
             member[field] = value
