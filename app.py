@@ -153,7 +153,7 @@ def parse_request_and_update(data: str, member: dict) -> tuple:
 
         for match_text in matches:
             value_raw = match_text.strip()
-            value = re.sub(r"(?<=[\w\d가-힣])\s*(으로|로|에)$", "", value_raw)
+            value = re.sub(r"(?<=[\w\d가-힣])\s*(으로|로|에)?\s*(수정|변경|바꿔줘|바꿔|바꿈)?$", "", value_raw)
             field = field_map[keyword]
             수정된필드[field] = value
             member[field] = value
