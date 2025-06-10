@@ -195,8 +195,8 @@ def find_member():
 
 
 # ✅ 회원 수정
-
-# ✅ 필드 키워드 → 시트 실제 컬럼명 매핑
+# ✅ 자연어 요청문에서 필드와 값 추출, 회원 dict 수정
+# 필드 맵 (추가 가능)
 field_map = {
     "휴대폰번호": "휴대폰번호",
     "핸드폰": "휴대폰번호",
@@ -208,24 +208,34 @@ field_map = {
     "비밀번호": "비밀번호",
     "직업": "근무처",
     "직장": "근무처",
-    # 필요한 항목 추가 가능
+    "회원번호": "회원번호",
 }
 
-# ✅ 자연어 요청문에서 필드와 값 추출, 회원 dict 수정
 def parse_request_and_update(data: str, member: dict) -> tuple:
     수정된필드 = {}
+
     for keyword in field_map:
-        pattern = rf"{keyword}\s*[:：]?\s*([\w\-@.()가-힣\d\s]+)"
+        # 예: '휴대폰번호를', '주소는', '이메일:'
+        pattern = rf"{keyword}(?:를|은|는|이|:|：)?\s*([\d\w가-힣@.\-()]+)"
         matches = re.findall(pattern, data)
-        for match_text in matches:
-            value_raw = match_text.strip()
-            # ✅ 조사 + 명령어 제거
-            value = re.sub(r"(?<=[\w\d가-힣])\s*(으로|로|에)?\s*(수정|변경|바꿔줘|바꿔|바꿈)?$", "", value_raw)
+
+        for value_raw in matches:
+            # 후처리: 조사와 명령어 제거
+            value = re.sub(r"(?<=[\w\d가-힣])\s*(으로|로|에)?\s*(수정|변경|바꿔줘|바꿔|바꿈)?$", "", value_raw.strip())
             field = field_map[keyword]
             수정된필드[field] = value
             member[field] = value
             member[f"{field}_기록"] = f"(기록됨: {value})"
+
     return member, 수정된필드
+
+
+
+
+
+
+
+
 
 
 # ✅ 회원 수정 API
