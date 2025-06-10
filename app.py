@@ -213,27 +213,25 @@ field_map = {
 
 
 
-
 def parse_request_and_update(data: str, member: dict) -> tuple:
     수정된필드 = {}
 
-    for keyword in field_map:
-        # 정확한 키워드 기반 값 추출 (숫자, 전화, 이메일 등만)
+    for keyword in sorted(field_map.keys(), key=lambda k: -len(k)):  # 🔁 길이순
         pattern = rf"{keyword}(?:를|은|는|이|:|：)?\s*(?P<value>[\d\-@.\w()]+)"
         matches = re.finditer(pattern, data)
 
         for match in matches:
             value_raw = match.group("value").strip()
-
-            # 후처리: 조사 및 명령어 제거
             value = re.sub(r"(으로|로|에)?(수정|변경|바꿔줘|바꿔|바꿈)?$", "", value_raw)
-
             field = field_map[keyword]
             수정된필드[field] = value
             member[field] = value
             member[f"{field}_기록"] = f"(기록됨: {value})"
 
     return member, 수정된필드
+
+
+
 
 
 
