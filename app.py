@@ -142,38 +142,6 @@ field_map = {
 
 
 
-# ✅ 자연어 요청문에서 회원 정보 수정 필드 추출
-def parse_request_and_update(data: str, member: dict) -> tuple:
-    수정된필드 = {}
-    무시된필드 = []
-
-    for keyword in field_map:
-        pattern = rf"{keyword}\s*[:：]?\s*([\w\-@.()가-힣\d\s]+)"
-        matches = re.findall(pattern, data)
-
-        for match_text in matches:
-            value_raw = match_text.strip()
-            value = re.sub(r"(?<=[\w\d가-힣])\s*(으로|로|에)?\s*(수정|변경|바꿔줘|바꿔|바꿈)?$", "", value_raw)
-            field = field_map[keyword]
-            수정된필드[field] = value
-            member[field] = value
-            member[f"{field}_기록"] = f"(기록됨: {value})"
-
-    return member, 수정된필드
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -228,7 +196,39 @@ def find_member():
 
 # ✅ 회원 수정
 
-# ✅ 회원 정보 수정 API
+# ✅ 필드 키워드 → 시트 실제 컬럼명 매핑
+field_map = {
+    "휴대폰번호": "휴대폰번호",
+    "핸드폰": "휴대폰번호",
+    "주소": "주소",
+    "이메일": "이메일",
+    "이름": "회원명",
+    "생일": "생년월일",
+    "생년월일": "생년월일",
+    "비밀번호": "비밀번호",
+    "직업": "근무처",
+    "직장": "근무처",
+    # 필요한 항목 추가 가능
+}
+
+# ✅ 자연어 요청문에서 필드와 값 추출, 회원 dict 수정
+def parse_request_and_update(data: str, member: dict) -> tuple:
+    수정된필드 = {}
+    for keyword in field_map:
+        pattern = rf"{keyword}\s*[:：]?\s*([\w\-@.()가-힣\d\s]+)"
+        matches = re.findall(pattern, data)
+        for match_text in matches:
+            value_raw = match_text.strip()
+            # ✅ 조사 + 명령어 제거
+            value = re.sub(r"(?<=[\w\d가-힣])\s*(으로|로|에)?\s*(수정|변경|바꿔줘|바꿔|바꿈)?$", "", value_raw)
+            field = field_map[keyword]
+            수정된필드[field] = value
+            member[field] = value
+            member[f"{field}_기록"] = f"(기록됨: {value})"
+    return member, 수정된필드
+
+
+# ✅ 회원 수정 API
 @app.route("/update_member", methods=["POST"])
 def update_member():
     try:
@@ -239,26 +239,32 @@ def update_member():
         if not 요청문:
             return jsonify({"error": "요청문이 비어 있습니다."}), 400
 
-        # ✅ 회원명 추출
-        name_match = re.search(r"(\w+)\s*회원", 요청문)
-        if not name_match:
-            return jsonify({"error": "회원명을 인식할 수 없습니다."}), 400
-        name = name_match.group(1)
-
-        # ✅ 시트 데이터 불러오기
+        # ✅ 시트 가져오기 및 회원명 리스트 확보
         sheet = get_member_sheet()
         db = sheet.get_all_records()
         raw_headers = sheet.row_values(1)
         headers = [h.strip().lower() for h in raw_headers]
 
-        # ✅ 회원 찾기
+        member_names = [row.get("회원명", "").strip() for row in db if row.get("회원명")]
+
+        # ✅ 요청문 내 포함된 실제 회원명 찾기 (길이순 정렬)
+        name = None
+        for candidate in sorted(member_names, key=lambda x: -len(x)):
+            if candidate and candidate in 요청문:
+                name = candidate
+                break
+
+        if not name:
+            return jsonify({"error": "요청문에서 유효한 회원명을 찾을 수 없습니다."}), 400
+
+        # ✅ 해당 회원 찾기
         matching_rows = [i for i, row in enumerate(db) if row.get("회원명") == name]
         if len(matching_rows) == 0:
             return jsonify({"error": f"'{name}' 회원을 찾을 수 없습니다."}), 404
         if len(matching_rows) > 1:
             return jsonify({"error": f"'{name}' 회원이 중복됩니다. 고유한 이름만 지원합니다."}), 400
 
-        row_index = matching_rows[0] + 2  # 헤더 포함 +2
+        row_index = matching_rows[0] + 2  # 헤더 포함으로 +2
         member = db[matching_rows[0]]
 
         # ✅ 자연어 해석 및 필드 수정
@@ -293,6 +299,7 @@ def update_member():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
     
 
