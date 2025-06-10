@@ -215,19 +215,22 @@ def parse_request_and_update(data: str, member: dict) -> tuple:
     수정된필드 = {}
 
     for keyword in field_map:
-        pattern = rf"{keyword}(?:를|은|는|이|:|：)?\s*(?P<value>[\d\w@.\-()]+)"
+        # 키워드 바로 뒤의 값만 추출 (공백 또는 쉼표 전까지)
+        pattern = rf"{keyword}(?:를|은|는|이|:|：)?\s*(?P<value>[^\s,]+)"
         matches = re.finditer(pattern, data)
 
         for match in matches:
             value_raw = match.group("value").strip()
-            # 후처리: 조사, 명령어 제거
-            value = re.sub(r"(?<=[\w\d가-힣])\s*(으로|로|에)?\s*(수정|변경|바꿔줘|바꿔|바꿈)?$", "", value_raw)
+
+            # 조사 및 명령어 제거
+            value = re.sub(r"(으로|로|에)?(수정|변경|바꿔줘|바꿔|바꿈)?$", "", value_raw)
             field = field_map[keyword]
             수정된필드[field] = value
             member[field] = value
             member[f"{field}_기록"] = f"(기록됨: {value})"
 
     return member, 수정된필드
+
 
 
 
