@@ -123,17 +123,43 @@ def get_worksheet(sheet_name):
 
 
 
-def parse_request_and_update(data: str, member: dict) -> dict:
+# ✅ 필드 키워드 → 시트의 실제 컬럼명 매핑
+field_map = {
+    "휴대폰번호": "휴대폰번호",
+    "핸드폰": "휴대폰번호",
+    "주소": "주소",
+    "이메일": "이메일",
+    "이름": "회원명",
+    "생일": "생년월일",
+    "생년월일": "생년월일",
+    "비밀번호": "비밀번호",
+    "직업": "근무처",
+    "직장": "근무처",
+    # 필요한 항목 계속 추가 가능
+}
+
+
+
+
+
+# ✅ 자연어 요청문에서 회원 정보 수정 필드 추출
+def parse_request_and_update(data: str, member: dict) -> tuple:
+    수정된필드 = {}
+    무시된필드 = []
+
     for keyword in field_map:
-        match = re.search(rf"{keyword}\s*([:：]?\s*)([\w\-@.]+)", data)
-        if match:
-            value_raw = match.group(2)
-            value = re.sub(r"(으로|로|에)$", "", value_raw)
+        pattern = rf"{keyword}\s*[:：]?\s*([\w\-@.()가-힣\d\s]+)"
+        matches = re.findall(pattern, data)
+
+        for match_text in matches:
+            value_raw = match_text.strip()
+            value = re.sub(r"(?<=[\w\d가-힣])\s*(으로|로|에)$", "", value_raw)
             field = field_map[keyword]
+            수정된필드[field] = value
             member[field] = value
             member[f"{field}_기록"] = f"(기록됨: {value})"
-            break
-    return member
+
+    return member, 수정된필드
 
 
 
@@ -202,8 +228,7 @@ def find_member():
 
 # ✅ 회원 수정
 
-
-# ✅ 자연어 기반 회원 수정 API
+# ✅ 회원 정보 수정 API
 @app.route("/update_member", methods=["POST"])
 def update_member():
     try:
@@ -214,44 +239,61 @@ def update_member():
         if not 요청문:
             return jsonify({"error": "요청문이 비어 있습니다."}), 400
 
-        parsed = parse_request(요청문)
-        name = parsed["회원명"]
-        수정목록 = parsed["수정목록"]
+        # ✅ 회원명 추출
+        name_match = re.search(r"(\w+)\s*회원", 요청문)
+        if not name_match:
+            return jsonify({"error": "회원명을 인식할 수 없습니다."}), 400
+        name = name_match.group(1)
 
-        if not name or not 수정목록:
-            return jsonify({"error": "회원명 또는 수정 필드를 인식할 수 없습니다."}), 400
-
+        # ✅ 시트 데이터 불러오기
         sheet = get_member_sheet()
         db = sheet.get_all_records()
+        raw_headers = sheet.row_values(1)
+        headers = [h.strip().lower() for h in raw_headers]
 
-        # 회원명으로 정확히 한 명만 일치하는지 확인
+        # ✅ 회원 찾기
         matching_rows = [i for i, row in enumerate(db) if row.get("회원명") == name]
         if len(matching_rows) == 0:
             return jsonify({"error": f"'{name}' 회원을 찾을 수 없습니다."}), 404
         if len(matching_rows) > 1:
             return jsonify({"error": f"'{name}' 회원이 중복됩니다. 고유한 이름만 지원합니다."}), 400
 
-        row_index = matching_rows[0] + 2  # 헤더 포함 때문에 +2
+        row_index = matching_rows[0] + 2  # 헤더 포함 +2
+        member = db[matching_rows[0]]
 
-        # 시트 헤더 처리
-        raw_headers = sheet.row_values(1)
-        headers = [h.strip().lower() for h in raw_headers]
+        # ✅ 자연어 해석 및 필드 수정
+        updated_member, 수정된필드 = parse_request_and_update(요청문, member)
 
-        # 수정 처리
-        for 항목 in 수정목록:
-            필드, 값 = 항목["필드"], 항목["값"]
-            필드정규화 = 필드.strip().lower()
-            if 필드정규화 not in headers:
-                return jsonify({"error": f"'{필드}' 필드는 시트에 존재하지 않습니다."}), 400
-            col_index = headers.index(필드정규화) + 1
-            sheet.update_cell(row_index, col_index, 값)
+        수정결과 = []
+        무시된필드 = []
 
-        return jsonify({"status": "success", "회원명": name, "수정": 수정목록}), 200
+        for key, value in updated_member.items():
+            key_strip = key.strip()
+            key_lower = key_strip.lower()
+
+            # _기록 필드는 저장 안 함
+            if key_strip.endswith("_기록"):
+                continue
+
+            if key_lower in headers:
+                col_index = headers.index(key_lower) + 1
+                sheet.update_cell(row_index, col_index, value)
+                수정결과.append({"필드": key_strip, "값": value})
+            else:
+                무시된필드.append(key_strip)
+
+        return jsonify({
+            "status": "success",
+            "회원명": name,
+            "수정": 수정결과,
+            "무시된_필드": 무시된필드
+        }), 200
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
     
 
 
