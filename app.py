@@ -245,7 +245,9 @@ def update_member():
         raw_headers = sheet.row_values(1)
         headers = [h.strip().lower() for h in raw_headers]
 
-        member_names = [row.get("회원명", "").strip() for row in db if row.get("회원명")]
+        # ✅ 안전하게 문자열로 변환 후 strip()
+        member_names = [str(row.get("회원명", "")).strip() for row in db if row.get("회원명") is not None]
+
 
         # ✅ 요청문 내 포함된 실제 회원명 찾기 (길이순 정렬)
         name = None
