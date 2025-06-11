@@ -476,7 +476,10 @@ def generate_tags(text):
 
 
 
-API_URL = "https://memberslist.onrender.com/jit_plugin/add_counseling"
+
+API_URL = os.getenv("EXTERNAL_API_URL")
+
+
 HEADERS = {"Content-Type": "application/json"}
 
 def determine_mode(content: str) -> str:
