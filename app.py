@@ -208,7 +208,6 @@ field_map = {
     "비밀번호": "비밀번호",
     "직업": "근무처",
     "직장": "근무처",
-    "회원번호": "회원번호",
 }
 
 
@@ -229,7 +228,7 @@ def parse_request_and_update(data: str, member: dict) -> tuple:
 
             field = field_map[keyword]
 
-            if field not in 수정된필드:  # ✅ 중복 저장 방지
+            if field not in 수정된필드 and value not in 수정된필드.values():  # ✅ 중복 저장 방지
                 수정된필드[field] = value
                 member[field] = value
                 member[f"{field}_기록"] = f"(기록됨: {value})"
