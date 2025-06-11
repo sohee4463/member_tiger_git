@@ -112,12 +112,7 @@ def get_worksheet(sheet_name):
         ]
         creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, scope)
         client = gspread.authorize(creds)
-
-      
-        sheet_name_env = os.getenv("GOOGLE_SHEET_DOC_NAME")
-        sheet = client.open(sheet_name_env)
-
-
+        sheet = client.open("members_list_tiger")
         return sheet.worksheet(sheet_name)
     except Exception as e:
         print(f"[시트 접근 오류] {e}")
@@ -481,9 +476,7 @@ def generate_tags(text):
 
 
 
-
-API_URL = os.getenv("EXTERNAL_API_URL")
-
+API_URL = "https://memberslist.onrender.com/jit_plugin/add_counseling"
 HEADERS = {"Content-Type": "application/json"}
 
 def determine_mode(content: str) -> str:
@@ -677,7 +670,7 @@ def debug_sheets():
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, scope)
         client = gspread.authorize(creds)  # ✅ 이 줄 추가
-        sheet = client.open("members_list_main")
+        sheet = client.open("members_list_tiger")
         titles = [ws.title for ws in sheet.worksheets()]
         return jsonify({"시트목록": titles})
     except Exception as e:
@@ -696,5 +689,3 @@ def debug_sheets():
 # 서버 실행
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
-
-
